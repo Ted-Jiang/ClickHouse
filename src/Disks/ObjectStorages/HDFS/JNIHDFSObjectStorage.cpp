@@ -3,6 +3,7 @@
 //
 
 #include <Common/re2.h>
+#include "Poco/DateTimeFormatter.h"
 #include <Disks/ObjectStorages/HDFS/JNIHDFSObjectStorage.h>
 
 #include <IO/copyData.h>
@@ -114,6 +115,24 @@ std::string JNIHDFSObjectStorage::extractObjectKeyFromURL(const StoredObject & o
     return path;
 }
 
+
+std::string fixObjectKeyFromURL(const String & path)
+{
+    /// This is very unfortunate, but for disk HDFS we made a mistake
+    /// and now its behaviour is inconsistent with S3 and Azure disks.
+    /// The mistake is that for HDFS we write into metadata files whole URL + data directory + key,
+    /// while for S3 and Azure we write there only data_directory + key.
+    /// This leads us into ambiguity that for StorageHDFS we have just key in object.remote_path,
+    /// but for DiskHDFS we have there URL as well.
+    String new_path = path;
+    /// If path start with BAD_HDFS_URL_REGEXP change to HDFS_HOST_REGEXP
+    if (re2::RE2::FullMatch(path, std::string((BAD_HDFS_URL_REGEXP))))
+    {
+        re2::RE2::Replace(&new_path, "hdfs:/", "hdfs://");
+    }
+    return new_path;
+}
+
 ObjectStorageKey
 JNIHDFSObjectStorage::generateObjectKeyForPath(const std::string & /* path */, const std::optional<std::string> & /* key_prefix */) const
 {
@@ -184,7 +203,8 @@ ObjectMetadata JNIHDFSObjectStorage::getObjectMetadata(const std::string & path)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "HDFS path is empty");
     }
 
-    auto *file_info = driver_->GetPathInfo(hdfs_fs.get(), path.data());
+    auto fix_path = fixObjectKeyFromURL(path);
+    auto *file_info = driver_->GetPathInfo(hdfs_fs.get(), fix_path.data());
 
     if (!file_info) {
         throw Exception(ErrorCodes::HDFS_ERROR,
@@ -194,6 +214,10 @@ ObjectMetadata JNIHDFSObjectStorage::getObjectMetadata(const std::string & path)
     ObjectMetadata metadata;
     metadata.size_bytes = static_cast<size_t>(file_info->mSize);
     metadata.last_modified = Poco::Timestamp::fromEpochTime(file_info->mLastMod);
+    // `etag` (entity tag) is typically used to identify a specific version of an object. It is commonly the MD5 hash of the object's content.
+    // Here change to file path + last modify time to make it unique.
+    metadata.etag = path
+        + Poco::DateTimeFormatter::format(Poco::Timestamp::fromEpochTime(file_info->mLastMod), "%Y-%m-%d %H:%M:%S");
 
     hdfsFreeFileInfo(file_info, 1);
     return metadata;
