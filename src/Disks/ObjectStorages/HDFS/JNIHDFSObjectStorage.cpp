@@ -90,7 +90,9 @@ void JNIHDFSObjectStorage::createDriver() const
 }
 
 static constexpr std::string_view BAD_HDFS_URL_REGEXP = "^hdfs:/[^/]*/.*";
+static constexpr std::string_view BAD_VIEW_URL_REGEXP = "^viewfs:/[^/]*/.*";
 static constexpr std::string_view HDFS_URL_REGEXP = "^hdfs://[^/]*/.*";
+static constexpr std::string_view VIEWFS_URL_REGEXP = "^viewfs://[^/]*/.*";
 
 std::string JNIHDFSObjectStorage::extractObjectKeyFromURL(const StoredObject & object) const
 {
@@ -109,8 +111,16 @@ std::string JNIHDFSObjectStorage::extractObjectKeyFromURL(const StoredObject & o
     if (re2::RE2::FullMatch(path, std::string((BAD_HDFS_URL_REGEXP))))
     {
         re2::RE2::Replace(&path, "hdfs:/", "hdfs://");
-    } if (!re2::RE2::FullMatch(path, std::string((HDFS_URL_REGEXP)))) {
-        path = url_without_path+ "/" + path;
+    }
+
+    if (re2::RE2::FullMatch(path, std::string((BAD_VIEW_URL_REGEXP))))
+    {
+        re2::RE2::Replace(&path, "viewfs:/", "viewfs://");
+    }
+
+    if (!re2::RE2::FullMatch(path, std::string((HDFS_URL_REGEXP))) && !re2::RE2::FullMatch(path, std::string((VIEWFS_URL_REGEXP))))
+    {
+        path = url_without_path + "/" + path;
     }
     return path;
 }
