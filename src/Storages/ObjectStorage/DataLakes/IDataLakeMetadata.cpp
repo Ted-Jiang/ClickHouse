@@ -41,12 +41,14 @@ public:
                 return nullptr;
 
             auto key = data_files[current_index];
-            auto object_metadata = object_storage->getObjectMetadata(key);
+            // fixme temporarily disable remote fetching of object metadata, but cache it in the future
+            // object metadta is still useful in query pruning etc.
+            //auto object_metadata = object_storage->getObjectMetadata(key);
 
-            if (callback)
-                callback(FileProgress(0, object_metadata.size_bytes));
+//            if (callback)
+//                callback(FileProgress(0, object_metadata.size_bytes));
 
-            return std::make_shared<ObjectInfo>(key, std::move(object_metadata));
+            return std::make_shared<ObjectInfo>(key, std::nullopt);
         }
     }
 
