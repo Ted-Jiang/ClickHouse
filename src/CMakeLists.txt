@@ -570,6 +570,8 @@ if (TARGET ch_contrib::hdfs)
     dbms_target_link_libraries(PRIVATE ch_contrib::hdfs)
 endif()
 
+include_directories(SYSTEM "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src")
+
 if (TARGET ch_contrib::hivemetastore)
     dbms_target_link_libraries(PRIVATE ch_contrib::hivemetastore)
 endif()

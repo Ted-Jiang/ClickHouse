@@ -1,16 +1,21 @@
+//
+// Created by Jiang, Yang on 2025/5/7.
+//
 #pragma once
-#include "config.h"
+
+#include <Common/re2.h>
+#include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
+
+#include <IO/copyData.h>
+//#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
+
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Common/getRandomASCIIString.h>
+#include <Common/logger_useful.h>
 
 
-#if USE_HDFS && !USE_JNI_HDFS
-
-#include <Disks/IDisk.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
-#include <Storages/ObjectStorage/HDFS/HDFSErrorWrapper.h>
-#include <Core/UUID.h>
-#include <memory>
-#include <Poco/Util/AbstractConfiguration.h>
+#include "arrow/io/hdfs_internal.h"
+#include "arrow/io/hdfs.h"
 
 namespace DB
 {
@@ -26,22 +31,41 @@ struct HDFSObjectStorageSettings
     int replication;
 };
 
+namespace detail
+{
+struct HDFSFsDeleter
+{
+    arrow::io::internal::LibHdfsShim* driver_;
 
-class HDFSObjectStorage : public IObjectStorage, public HDFSErrorWrapper
+    HDFSFsDeleter(arrow::io::internal::LibHdfsShim* driver)
+        : driver_(driver) {}
+
+    void operator()(hdfsFS fs_ptr)
+    {
+        driver_->hdfsDisconnect(fs_ptr);
+        LOG_DEBUG(getLogger("HDFSClient"), "driver_->hdfsDisconnect done.");
+    }
+};
+}
+
+using HDFSFSPtr = std::unique_ptr<std::remove_pointer_t<hdfsFS>, detail::HDFSFsDeleter>;
+
+class JNIHDFSObjectStorage : public IObjectStorage
 {
 public:
 
     using SettingsPtr = std::unique_ptr<HDFSObjectStorageSettings>;
 
-    HDFSObjectStorage(
+    JNIHDFSObjectStorage(
         const String & hdfs_root_path_,
         SettingsPtr settings_,
         const Poco::Util::AbstractConfiguration & config_,
         bool lazy_initialize)
-        : HDFSErrorWrapper(hdfs_root_path_, config_)
-        , config(config_)
+        : config(config_)
+        , driver_(nullptr)
+        , hdfs_fs(nullptr, detail::HDFSFsDeleter(driver_))
         , settings(std::move(settings_))
-        , log(getLogger("HDFSObjectStorage(" + hdfs_root_path_ + ")"))
+        , log(getLogger("JNIHDFSObjectStorage(" + hdfs_root_path_ + ")"))
     {
         const size_t begin_of_path = hdfs_root_path_.find('/', hdfs_root_path_.find("//") + 2);
         url = hdfs_root_path_;
@@ -55,13 +79,13 @@ public:
             initializeHDFSFS();
     }
 
-    std::string getName() const override { return "HDFSObjectStorage"; }
+    std::string getName() const override { return "JNIHDFSObjectStorage"; }
 
     std::string getCommonKeyPrefix() const override { return url; }
 
     std::string getDescription() const override { return url; }
 
-    ObjectStorageType getType() const override { return ObjectStorageType::HDFS; }
+    ObjectStorageType getType() const override { return ObjectStorageType::JNIHDFS; }
 
     bool exists(const StoredObject & object) const override;
 
@@ -96,6 +120,12 @@ public:
 
     String getObjectsNamespace() const override { return ""; }
 
+    std::unique_ptr<IObjectStorage> cloneObjectStorage(
+        const std::string & new_namespace,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        ContextPtr context) override;
+
     ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
     bool areObjectKeysRandom() const override { return true; }
@@ -108,6 +138,7 @@ public:
 
 private:
     void initializeHDFSFS() const;
+    void createDriver() const;
     std::string extractObjectKeyFromURL(const StoredObject & object) const;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
@@ -117,6 +148,7 @@ private:
 
     const Poco::Util::AbstractConfiguration & config;
 
+    mutable arrow::io::internal::LibHdfsShim* driver_;
     mutable HDFSFSPtr hdfs_fs;
 
     mutable std::mutex init_mutex;
@@ -132,4 +164,3 @@ private:
 
 }
 
-#endif

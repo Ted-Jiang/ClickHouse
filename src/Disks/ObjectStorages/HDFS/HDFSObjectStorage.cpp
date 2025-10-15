@@ -10,7 +10,7 @@
 #include <Common/logger_useful.h>
 
 
-#if USE_HDFS
+#if USE_HDFS && !USE_JNI_HDFS
 
 namespace DB
 {

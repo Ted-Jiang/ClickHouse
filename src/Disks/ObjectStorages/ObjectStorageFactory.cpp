@@ -7,9 +7,12 @@
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 #endif
-#if USE_HDFS
+#if USE_HDFS && !USE_JNI_HDFS
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
+#endif
+#if USE_JNI_HDFS
+#include <Disks/ObjectStorages/HDFS/JNIHDFSObjectStorage.h>
 #endif
 #if USE_AZURE_BLOB_STORAGE
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
@@ -257,7 +260,7 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
 
 #endif
 
-#if USE_HDFS
+#if USE_HDFS && !USE_JNI_HDFS
 void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType(
@@ -277,6 +280,29 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
                 config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024), context->getSettingsRef()[Setting::hdfs_replication]);
 
             return createObjectStorage<HDFSObjectStorage>(ObjectStorageType::HDFS, config, config_prefix, uri, std::move(settings), config, /* lazy_initialize */false);
+        });
+}
+#endif
+
+#if USE_JNI_HDFS
+void registerHDFSObjectStorage(ObjectStorageFactory & factory)
+{
+    factory.registerObjectStorageType(
+        "jni_hdfs",
+        [](const std::string & /* name */,
+           const Poco::Util::AbstractConfiguration & config,
+           const std::string & config_prefix,
+           const ContextPtr & context,
+           bool /* skip_access_check */) -> ObjectStoragePtr
+        {
+            auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
+            if (uri.back() != '/')
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS path must ends with '/', but '{}' doesn't.", uri);
+
+            std::unique_ptr<HDFSObjectStorageSettings> settings = std::make_unique<HDFSObjectStorageSettings>(
+                config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024), context->getSettingsRef()[Setting::hdfs_replication]);
+
+            return createObjectStorage<JNIHDFSObjectStorage>(ObjectStorageType::JNIHDFS, config, config_prefix, uri, std::move(settings), config, /* lazy_initialize */false);
         });
 }
 #endif

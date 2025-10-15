@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <Common/re2.h>
 
-#if USE_HDFS
+#if USE_HDFS && !USE_JNI_HDFS
 #include <Common/ShellCommand.h>
 #include <Common/Exception.h>
 #include <IO/Operators.h>
