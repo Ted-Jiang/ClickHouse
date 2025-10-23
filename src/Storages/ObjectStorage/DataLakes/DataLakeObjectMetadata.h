@@ -16,6 +16,8 @@ struct DataLakeObjectMetadata
     std::vector<Iceberg::PositionDeleteObject> position_deletes_objects;
     /// Data object file path key, for iceberg data object
     String data_object_file_path_key;
+    Int32 underlying_format_read_schema_id;
+    Int64 sequence_number;
 
 };
 

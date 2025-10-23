@@ -32,9 +32,12 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
 
     auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object);
 
-    if (iceberg_object_info) {
+    if (iceberg_object_info)
+    {
         data_lake_metadata.position_deletes_objects = iceberg_object_info->position_deletes_objects;
         data_lake_metadata.data_object_file_path_key = iceberg_object_info->data_object_file_path_key;
+        data_lake_metadata.sequence_number = iceberg_object_info->sequence_number;
+        data_lake_metadata.underlying_format_read_schema_id = iceberg_object_info->underlying_format_read_schema_id;
     }
 
 
@@ -61,6 +64,8 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
         auto iceberg_object = std::static_pointer_cast<IcebergDataObjectInfo>(object);
         iceberg_object->data_object_file_path_key = data_lake_metadata.data_object_file_path_key;
         iceberg_object->position_deletes_objects = data_lake_metadata.position_deletes_objects;
+        iceberg_object->sequence_number = data_lake_metadata.sequence_number;
+        iceberg_object->underlying_format_read_schema_id = data_lake_metadata.underlying_format_read_schema_id;
     }
 
     object->data_lake_metadata = data_lake_metadata;
