@@ -50,6 +50,8 @@ struct DataSourceDescription
     bool is_encrypted = false;
     bool is_cached = false;
 
+    std::string zookeeper_name;
+
     bool operator==(const DataSourceDescription & other) const;
     bool sameKind(const DataSourceDescription & other) const;
 

@@ -183,7 +183,7 @@ struct JNIReadBufferFromHDFS::JNIReadBufferFromHDFSImpl : public BufferWithOwnMe
             working_buffer.resize(bytes_read);
             file_offset += bytes_read;
             if (read_settings.remote_throttler)
-                read_settings.remote_throttler->add(bytes_read, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
+                read_settings.remote_throttler->throttle(bytes_read);
 
             return true;
         }
@@ -226,8 +226,7 @@ struct JNIReadBufferFromHDFS::JNIReadBufferFromHDFSImpl : public BufferWithOwnMe
         }
         if (bytes_read && read_settings.remote_throttler)
         {
-            read_settings.remote_throttler->add(
-                bytes_read, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
+            read_settings.remote_throttler->throttle(bytes_read);
         }
         return bytes_read;
     }

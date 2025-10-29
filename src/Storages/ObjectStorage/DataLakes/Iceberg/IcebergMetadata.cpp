@@ -815,10 +815,16 @@ void IcebergMetadata::addDeleteTransformers(
 {
     auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
     if (!iceberg_object_info)
+    {
+        LOG_TRACE(log, "No delete transformers added, because object info is not IcebergDataObjectInfo {}", object_info->getPath());
         return;
+    } else {
+        LOG_TRACE(log, "Adding delete transformers for IcebergDataObjectInfo {}", object_info->getPath());
+    }
 
     if (!iceberg_object_info->position_deletes_objects.empty())
     {
+        LOG_TRACE(log, "Constructing position delete transformer, there are {} position delete files", iceberg_object_info->position_deletes_objects.size());
         builder.addSimpleTransform(
             [&](const SharedHeader & header)
             { return iceberg_object_info->getPositionDeleteTransformer(object_storage, header, format_settings, local_context); });
