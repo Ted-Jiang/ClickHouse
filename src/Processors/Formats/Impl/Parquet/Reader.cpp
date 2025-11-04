@@ -4,6 +4,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/logger_useful.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
@@ -347,6 +348,8 @@ void Reader::prefilterAndInitRowGroups()
             column.need_null_map = is_nullable && !null_count_is_known_to_be_zero;
         }
     }
+
+    LOG_TRACE(&Poco::Logger::get("[Parquet]"), "Skip row groups: {} of {}", file_metadata.row_groups.size() - row_groups.size(), file_metadata.row_groups.size() );
 
     if (row_groups.empty())
         return; // all row groups were skipped
@@ -849,6 +852,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
                 if (start_row > prev_row_idx)
                     column.row_ranges_after_column_index.emplace_back(prev_row_idx, start_row);
                 prev_row_idx = end_row;
+                LOG_TRACE(&Poco::Logger::get("[Parquet]"), "Page index filtered out rows [{} - {}) for column '{}'", prev_row_idx, start_row, column_info.name);
             }
         }
 
