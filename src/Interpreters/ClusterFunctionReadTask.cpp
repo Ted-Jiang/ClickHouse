@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Common/logger_useful.h>
 
@@ -29,6 +30,16 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     if (object->data_lake_metadata.has_value())
         data_lake_metadata = object->data_lake_metadata.value();
 
+    auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object);
+    //here notice should pass these args
+    if (iceberg_object_info) {
+        position_deletes_objects = iceberg_object_info->position_deletes_objects;
+        data_object_file_path_key = iceberg_object_info->data_object_file_path_key;
+        underlying_format_read_schema_id = iceberg_object_info->underlying_format_read_schema_id;
+        sequence_number = iceberg_object_info->sequence_number;
+    }
+
+
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
 }
@@ -43,9 +54,19 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
     if (isEmpty())
         return {};
 
-    auto object = std::make_shared<ObjectInfo>(path);
-    object->data_lake_metadata = data_lake_metadata;
-    return object;
+    if (position_deletes_objects.empty()) {
+        auto object = std::make_shared<ObjectInfo>(path);
+        object->data_lake_metadata = data_lake_metadata;
+        return object;
+    } else {
+        auto object = std::make_shared<IcebergDataObjectInfo>(path);
+        object->data_object_file_path_key = data_object_file_path_key;
+        object->data_lake_metadata = data_lake_metadata;
+        object->position_deletes_objects = position_deletes_objects;
+        object->underlying_format_read_schema_id = underlying_format_read_schema_id;
+        object->sequence_number = sequence_number;
+        return object;
+    }
 }
 
 void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protocol_version) const
@@ -60,6 +81,32 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protoc
             data_lake_metadata.transform->serialize(out, registry);
         else
             ActionsDAG().serialize(out, registry);
+    }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_POS_DELETE)
+    {
+        writeVarUInt(position_deletes_objects.size(), out);
+        LOG_TRACE(
+            getLogger("ClusterFunctionReadTaskResponse"),
+            "[Serialize] Iceberg position deletes objects count: {}",
+            position_deletes_objects.size());
+        for (const auto & pos_delete_obj : position_deletes_objects)
+        {
+            writeStringBinary(pos_delete_obj.file_path, out);
+            writeStringBinary(pos_delete_obj.file_format, out);
+            if (pos_delete_obj.reference_data_file_path.has_value())
+            {
+                writeVarUInt(1, out);
+                writeStringBinary(pos_delete_obj.reference_data_file_path.value(), out);
+            }
+            else
+            {
+                writeVarUInt(0, out);
+            }
+        }
+        writeStringBinary(data_object_file_path_key, out);
+        writeVarInt(underlying_format_read_schema_id, out);
+        writeVarInt(sequence_number, out);
     }
 }
 
@@ -86,6 +133,34 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
         {
             data_lake_metadata.transform = std::move(transform);
         }
+    }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_POS_DELETE)
+    {
+        size_t pos_delete_obj_size = 0;
+        readVarUInt(pos_delete_obj_size, in);
+        position_deletes_objects.resize(pos_delete_obj_size);
+        LOG_TRACE(
+            getLogger("ClusterFunctionReadTaskResponse"),
+            "[Deserializing] Iceberg position deletes objects count: {}",
+            pos_delete_obj_size);
+        for (size_t i = 0; i < pos_delete_obj_size; ++i)
+        {
+            Iceberg::PositionDeleteObject & pos_delete_obj = position_deletes_objects[i];
+            readStringBinary(pos_delete_obj.file_path, in);
+            readStringBinary(pos_delete_obj.file_format, in);
+            size_t has_reference_path = 0;
+            readVarUInt(has_reference_path, in);
+            if (has_reference_path == 1)
+            {
+                String reference_path;
+                readStringBinary(reference_path, in);
+                pos_delete_obj.reference_data_file_path = reference_path;
+            }
+        }
+        readStringBinary(data_object_file_path_key, in);
+        readVarInt(underlying_format_read_schema_id, in);
+        readVarInt(sequence_number, in);
     }
 }
 

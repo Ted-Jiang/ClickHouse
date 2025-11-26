@@ -124,7 +124,7 @@ public:
         const std::string & new_namespace,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        ContextPtr context) override;
+        ContextPtr context) ;
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 

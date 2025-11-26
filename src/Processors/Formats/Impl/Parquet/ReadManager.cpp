@@ -2,6 +2,7 @@
 
 #include <Common/BitHelpers.h>
 #include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 
@@ -102,8 +103,10 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
     /// Finish the stage.
     if (stage == ReadStage::BloomFilterBlocksOrDictionary)
     {
-        if (!reader.applyBloomAndDictionaryFilters(row_group))
+        if (!reader.applyBloomAndDictionaryFilters(row_group)) {
             stage = ReadStage::Deliver; // skip the row group
+            LOG_TRACE(&Poco::Logger::get("[Parquet]"), "Row group {} was fully filtered out by bloom filters", row_group_idx);
+        }
         for (auto & c : row_group.columns)
         {
             c.bloom_filter_header_prefetch.reset(&diff);

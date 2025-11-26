@@ -2,6 +2,7 @@
 #include <Core/Types.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
 
 
 namespace DB
@@ -20,6 +21,11 @@ struct ClusterFunctionReadTaskResponse
     String path;
     /// Object metadata path, in case of data lake object.
     DataLakeObjectMetadata data_lake_metadata;
+    /// Delete objections for iceberg position delete
+    std::vector<Iceberg::PositionDeleteObject> position_deletes_objects;
+    String data_object_file_path_key;
+    Int32 underlying_format_read_schema_id;
+    Int64 sequence_number;
 
     /// Convert received response into ObjectInfo.
     ObjectInfoPtr getObjectInfo() const;
