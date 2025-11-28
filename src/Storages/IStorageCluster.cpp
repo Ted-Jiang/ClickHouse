@@ -118,9 +118,25 @@ void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
     if (extension)
         return;
 
+    if (filter_actions_dag)
+    {
+        predicate = query_info.filter_actions_dag->getOutputs().at(0);
+        LOG_TRACE(
+            log,
+            "[Notice] Using filter_actions_dag from SelectQueryInfo to pushdown filter for ReadFromCluster: {}",
+            query_info.filter_actions_dag.get()->dumpNames());
+    }
+    else if (query_info.filter_actions_dag)
+    {
+        LOG_TRACE(
+            log,
+            "[Notice] Using filter_actions_dag from ReadFromCluster to pushdown filter for ReadFromCluster: {}",
+            query_info.filter_actions_dag.get()->dumpNames());
+    }
+    else
+        LOG_TRACE(log, "[Notice] No filter_actions_dag, cannot pushdown filter for ReadFromCluster.");
     extension = storage->getTaskIteratorExtension(
-        predicate,
-        filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get(),
+        predicate, filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get(),
         context,
         cluster);
 }

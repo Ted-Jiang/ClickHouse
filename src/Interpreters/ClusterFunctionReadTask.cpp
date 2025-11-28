@@ -86,10 +86,6 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t protoc
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_POS_DELETE)
     {
         writeVarUInt(position_deletes_objects.size(), out);
-        LOG_TRACE(
-            getLogger("ClusterFunctionReadTaskResponse"),
-            "[Serialize] Iceberg position deletes objects count: {}",
-            position_deletes_objects.size());
         for (const auto & pos_delete_obj : position_deletes_objects)
         {
             writeStringBinary(pos_delete_obj.file_path, out);
@@ -140,10 +136,6 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
         size_t pos_delete_obj_size = 0;
         readVarUInt(pos_delete_obj_size, in);
         position_deletes_objects.resize(pos_delete_obj_size);
-        LOG_TRACE(
-            getLogger("ClusterFunctionReadTaskResponse"),
-            "[Deserializing] Iceberg position deletes objects count: {}",
-            pos_delete_obj_size);
         for (size_t i = 0; i < pos_delete_obj_size; ++i)
         {
             Iceberg::PositionDeleteObject & pos_delete_obj = position_deletes_objects[i];

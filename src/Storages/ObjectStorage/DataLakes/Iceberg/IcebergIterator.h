@@ -75,6 +75,7 @@ private:
 
     size_t min_max_index_pruned_files = 0;
     size_t partition_pruned_files = 0;
+    size_t not_pruned_files = 0;
 };
 
 }

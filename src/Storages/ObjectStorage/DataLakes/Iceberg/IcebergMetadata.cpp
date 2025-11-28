@@ -815,12 +815,7 @@ void IcebergMetadata::addDeleteTransformers(
 {
     auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
     if (!iceberg_object_info)
-    {
-        LOG_TRACE(log, "No delete transformers added, because object info is not IcebergDataObjectInfo {}", object_info->getPath());
         return;
-    } else {
-        LOG_TRACE(log, "Adding delete transformers for IcebergDataObjectInfo {}", object_info->getPath());
-    }
 
     if (!iceberg_object_info->position_deletes_objects.empty())
     {
