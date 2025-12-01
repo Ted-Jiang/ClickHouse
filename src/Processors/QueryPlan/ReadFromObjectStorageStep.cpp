@@ -74,6 +74,13 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     auto context = getContext();
     size_t estimated_keys_count = iterator_wrapper->estimatedKeysCount();
 
+    LOG_TRACE(
+        &Poco::Logger::get("ReadFromObjectStorageStep"),
+        "num_streams:{}, estimated keys count: {} for reading from object storage ",
+        num_streams,
+        estimated_keys_count);
+
+
     if (estimated_keys_count > 1)
         num_streams = std::min(num_streams, estimated_keys_count);
     else
