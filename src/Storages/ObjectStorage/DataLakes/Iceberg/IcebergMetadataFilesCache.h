@@ -15,6 +15,8 @@ namespace ProfileEvents
 {
     extern const Event IcebergMetadataFilesCacheMisses;
     extern const Event IcebergMetadataFilesCacheHits;
+    extern const Event IcebergMetadataFilesContentCacheHits;
+    extern const Event IcebergMetadataFilesContentCacheMisses;
     extern const Event IcebergMetadataFilesCacheWeightLost;
 }
 
@@ -127,8 +129,10 @@ public:
             return std::make_shared<IcebergMetadataFilesCacheCell>(std::move(manifest_file_cache_keys));
         };
         auto result = Base::getOrSet(data_path, load_fn_wrapper);
-        if (result.second)
+        if (result.second) {
+            LOG_TRACE(getLogger("ManifestFilePtr"), "delete need Cache miss for manifest file '{}'", data_path);
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
+        }
         else
             ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
         return std::get<ManifestFileCacheKeys>(result.first->cached_element);
@@ -144,9 +148,9 @@ public:
         };
         auto result = Base::getOrSet(data_path, load_fn_wrapper);
         if (result.second)
-            ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
+            ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesContentCacheMisses);
         else
-            ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
+            ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesContentCacheHits);
         return std::get<Iceberg::ManifestFilePtr>(result.first->cached_element);
     }
 

@@ -17,6 +17,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
+#include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributorV2.h>
 
 namespace DB
 {
@@ -24,6 +25,7 @@ namespace Setting
 {
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
+    extern const SettingsBool allow_iceberg_distributer_v2;
 }
 
 namespace ErrorCodes
@@ -224,21 +226,43 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         }
     }
 
-    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(
-        iterator,
-        std::move(ids_of_hosts),
-        /* send_over_whole_archive */!local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes]);
 
-    auto callback = std::make_shared<TaskIterator>(
-        [task_distributor, local_context](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
-        {
-            auto task = task_distributor->getNextTask(number_of_current_replica);
-            if (task)
-                return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context);
-            return std::make_shared<ClusterFunctionReadTaskResponse>();
-        });
+    if (local_context->getSettingsRef()[Setting::allow_iceberg_distributer_v2])
+    {
+       auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributorV2>(
+            iterator,
+            std::move(ids_of_hosts),
+            /* send_over_whole_archive */ !local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes]);
+       auto callback = std::make_shared<TaskIterator>(
+           [task_distributor, local_context](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
+           {
+               auto task = task_distributor->getNextTask(number_of_current_replica);
+               if (task)
+                   return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context);
+               return std::make_shared<ClusterFunctionReadTaskResponse>();
+           });
 
-    return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
+       return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
+    }
+    else
+    {
+        auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(
+            iterator,
+            std::move(ids_of_hosts),
+            /* send_over_whole_archive */ !local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes]);
+        auto callback = std::make_shared<TaskIterator>(
+            [task_distributor, local_context](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
+            {
+                auto task = task_distributor->getNextTask(number_of_current_replica);
+                if (task)
+                    return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context);
+                return std::make_shared<ClusterFunctionReadTaskResponse>();
+            });
+
+        return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
+    }
+
+
 }
 
 }

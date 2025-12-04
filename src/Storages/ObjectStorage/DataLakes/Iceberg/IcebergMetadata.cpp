@@ -309,6 +309,12 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
                 }
             }
 
+            LOG_TRACE(
+                log,
+                "Updating Iceberg snapshot to id `{}` for table `{}` with manifest list `{}`",
+                relevant_snapshot_id,
+                configuration_ptr->getPathForRead().path,
+                snapshot->getValue<String>(f_manifest_list));
             relevant_snapshot = std::make_shared<IcebergDataSnapshot>(
                 getManifestList(
                 object_storage,
