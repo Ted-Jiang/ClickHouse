@@ -56,6 +56,26 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_man
     }
 }
 
+IcebergDataObjectInfo::IcebergDataObjectInfo(Iceberg::ManifestFileEntryPtr data_manifest_file_entry_)
+    : RelativePathWithMetadata(data_manifest_file_entry_->file_path)
+    , data_object_file_path_key(data_manifest_file_entry_->file_path_key)
+    , underlying_format_read_schema_id(data_manifest_file_entry_->schema_id)
+    , sequence_number(data_manifest_file_entry_->added_sequence_number)
+{
+    auto toupper = [](String & str)
+    {
+        std::transform(str.begin(), str.end(), str.begin(), ::toupper);
+        return str;
+    };
+    if (!position_deletes_objects.empty() && toupper(data_manifest_file_entry_->file_format) != "PARQUET")
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Position deletes are only supported for data files of Parquet format in Iceberg, but got {}",
+            data_manifest_file_entry_->file_format);
+    }
+}
+
 IcebergDataObjectInfo::IcebergDataObjectInfo(String path)
     : RelativePathWithMetadata(path)
 {

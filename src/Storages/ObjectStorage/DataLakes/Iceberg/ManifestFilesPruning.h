@@ -23,6 +23,7 @@ enum class PruningReturnStatus
 
 struct ManifestFileEntry;
 class ManifestFileContent;
+using ManifestFileEntryPtr = std::shared_ptr<ManifestFileEntry>;
 
 DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name);
 
@@ -51,7 +52,7 @@ public:
         const ManifestFileContent & manifest_file,
         DB::ContextPtr context);
 
-    PruningReturnStatus canBePruned(const ManifestFileEntry & entry) const;
+    PruningReturnStatus canBePruned(ManifestFileEntryPtr entry) const;
 };
 
 }

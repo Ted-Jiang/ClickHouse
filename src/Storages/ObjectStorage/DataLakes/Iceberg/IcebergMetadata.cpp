@@ -832,16 +832,16 @@ void IcebergMetadata::addDeleteTransformers(
     }
     const auto & delete_files = iceberg_object_info->equality_deletes_objects;
     LOG_DEBUG(log, "Constructing filter transform for equality delete, there are {} delete files", delete_files.size());
-    for (const ManifestFileEntry & delete_file : delete_files)
+    for (const ManifestFileEntryPtr & delete_file : delete_files)
     {
         auto simple_transform_adder = [&](const SharedHeader & header)
         {
             /// get header of delete file
             Block delete_file_header;
-            ObjectInfo delete_file_object(delete_file.file_path);
+            ObjectInfo delete_file_object(delete_file->file_path);
             {
                 auto schema_read_buffer = createReadBuffer(delete_file_object, object_storage, local_context, log);
-                auto schema_reader = FormatFactory::instance().getSchemaReader(delete_file.file_format, *schema_read_buffer, local_context);
+                auto schema_reader = FormatFactory::instance().getSchemaReader(delete_file->file_format, *schema_read_buffer, local_context);
                 auto columns_with_names = schema_reader->readSchema();
                 ColumnsWithTypeAndName initial_header_data;
                 for (const auto & elem : columns_with_names)
@@ -851,22 +851,22 @@ void IcebergMetadata::addDeleteTransformers(
                 delete_file_header = Block(initial_header_data);
             }
             /// with equality ids, we can know which columns should be deleted, here we calculate the indexes.
-            const std::vector<Int32> & equality_ids = *(delete_file.equality_ids);
+            const std::vector<Int32> & equality_ids = *(delete_file->equality_ids);
             Block block_for_set;
             std::vector<size_t> equality_indexes_delete_file;
             for (Int32 col_id : equality_ids)
             {
                 NameAndTypePair name_and_type
-                    = persistent_components.schema_processor->getFieldCharacteristics(delete_file.schema_id, col_id);
+                    = persistent_components.schema_processor->getFieldCharacteristics(delete_file->schema_id, col_id);
                 block_for_set.insert(ColumnWithTypeAndName(name_and_type.type, name_and_type.name));
                 equality_indexes_delete_file.push_back(delete_file_header.getPositionByName(name_and_type.name));
             }
             /// Then we read the content of the delete file.
             auto mutable_columns_for_set = block_for_set.cloneEmptyColumns();
             std::unique_ptr<ReadBuffer> data_read_buffer = createReadBuffer(delete_file_object, object_storage, local_context, log);
-            CompressionMethod compression_method = chooseCompressionMethod(delete_file.file_path, "auto");
+            CompressionMethod compression_method = chooseCompressionMethod(delete_file->file_path, "auto");
             auto delete_format = FormatFactory::instance().getInput(
-                delete_file.file_format,
+                delete_file->file_format,
                 *data_read_buffer,
                 delete_file_header,
                 local_context,

@@ -129,7 +129,7 @@ namespace
 
 }
 
-const std::vector<ManifestFileEntry> & ManifestFileContent::getFilesWithoutDeleted(FileContentType content_type) const
+const std::vector<ManifestFileEntryPtr> & ManifestFileContent::getFilesWithoutDeleted(FileContentType content_type) const
 {
     if (content_type == FileContentType::DATA)
         return data_files_without_deleted;
@@ -415,7 +415,7 @@ ManifestFileContent::ManifestFileContent(
         switch (content_type)
         {
             case FileContentType::DATA:
-                this->data_files_without_deleted.emplace_back(
+                this->data_files_without_deleted.emplace_back(std::make_shared<ManifestFileEntry>(
                     file_path_key,
                     file_path,
                     status,
@@ -427,7 +427,7 @@ ManifestFileContent::ManifestFileContent(
                     columns_infos,
                     file_format,
                     /*reference_data_file = */ std::nullopt,
-                    /*equality_ids*/ std::nullopt);
+                    /*equality_ids*/ std::nullopt));
                 break;
             case FileContentType::POSITION_DELETE:
             {
@@ -441,7 +441,7 @@ ManifestFileContent::ManifestFileContent(
                         reference_file_path = reference_file_path_field.safeGet<String>();
                     }
                 }
-                this->position_deletes_files_without_deleted.emplace_back(
+                this->position_deletes_files_without_deleted.emplace_back(std::make_shared<ManifestFileEntry>(
                     file_path_key,
                     file_path,
                     status,
@@ -453,7 +453,7 @@ ManifestFileContent::ManifestFileContent(
                     columns_infos,
                     file_format,
                     reference_file_path,
-                    /*equality_ids*/ std::nullopt);
+                    /*equality_ids*/ std::nullopt));
                 break;
             }
             case FileContentType::EQUALITY_DELETE:
@@ -469,7 +469,7 @@ ManifestFileContent::ManifestFileContent(
                     throw Exception(
                             DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                             "Couldn't find field {} in equality delete file entry", c_data_file_equality_ids);
-                this->equality_deletes_files.emplace_back(
+                this->equality_deletes_files.emplace_back(std::make_shared<ManifestFileEntry>(
                     file_path_key,
                     file_path,
                     status,
@@ -481,7 +481,7 @@ ManifestFileContent::ManifestFileContent(
                     columns_infos,
                     file_format,
                     /*reference_data_file = */ std::nullopt,
-                    equality_ids);
+                    equality_ids));
                 break;
             }
         }
@@ -490,7 +490,7 @@ ManifestFileContent::ManifestFileContent(
 }
 
 // We prefer files to be sorted by schema id, because it allows us to reuse ManifestFilePruner during partition and minmax pruning
-void ManifestFileContent::sortManifestEntriesBySchemaId(std::vector<ManifestFileEntry> & files)
+void ManifestFileContent::sortManifestEntriesBySchemaId(std::vector<ManifestFileEntryPtr> & files)
 {
     std::vector<size_t> indices(files.size());
     std::iota(indices.begin(), indices.end(), 0);
@@ -500,14 +500,14 @@ void ManifestFileContent::sortManifestEntriesBySchemaId(std::vector<ManifestFile
         indices.end(),
         [&](size_t i, size_t j)
         {
-            if (files[i].schema_id != files[j].schema_id)
+            if (files[i]->schema_id != files[j]->schema_id)
             {
-                return files[i].schema_id < files[j].schema_id;
+                return files[i]->schema_id < files[j]->schema_id;
             }
             return i < j;
         });
 
-    std::vector<ManifestFileEntry> sorted_files;
+    std::vector<ManifestFileEntryPtr> sorted_files;
     sorted_files.reserve(files.size());
     for (const auto & index : indices)
     {
@@ -557,7 +557,7 @@ std::optional<Int64> ManifestFileContent::getRowsCountInAllFilesExcludingDeleted
     {
         /// Have at least one column with rows count
         bool found = false;
-        for (const auto & [column, column_info] : file.columns_infos)
+        for (const auto & [column, column_info] : file->columns_infos)
         {
             if (column_info.rows_count.has_value())
             {
@@ -580,7 +580,7 @@ std::optional<Int64> ManifestFileContent::getBytesCountInAllDataFilesExcludingDe
     {
         /// Have at least one column with bytes count
         bool found = false;
-        for (const auto & [column, column_info] : file.columns_infos)
+        for (const auto & [column, column_info] : file->columns_infos)
         {
             if (column_info.bytes_size.has_value())
             {
