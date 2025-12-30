@@ -262,8 +262,9 @@ std::string normalizeUuid(const std::string & uuid)
     return result;
 }
 
-Poco::JSON::Object::Ptr getMetadataJSONObject(
+Poco::JSON::Object::Ptr getMetadataJSONObjectInner(
     const String & metadata_file_path,
+    const String & etag,
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration_ptr,
     IcebergMetadataFilesCachePtr cache_ptr,
@@ -295,13 +296,48 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
 
     String metadata_json_str;
     if (cache_ptr)
-        metadata_json_str = cache_ptr->getOrSetTableMetadata(IcebergMetadataFilesCache::getKey(configuration_ptr, metadata_file_path), create_fn);
+        metadata_json_str = cache_ptr->getOrSetTableMetadata(IcebergMetadataFilesCache::getKey(configuration_ptr, metadata_file_path, etag), create_fn);
     else
         metadata_json_str = create_fn();
 
     Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
     Poco::Dynamic::Var json = parser.parse(metadata_json_str);
     return json.extract<Poco::JSON::Object::Ptr>();
+}
+
+Poco::JSON::Object::Ptr getMetadataJSONObject(
+    const String & metadata_file_path,
+    ObjectStoragePtr object_storage,
+    StorageObjectStorageConfigurationPtr configuration_ptr,
+    IcebergMetadataFilesCachePtr cache_ptr,
+    const ContextPtr & local_context,
+    LoggerPtr log,
+    CompressionMethod compression_method)
+{
+    // For compatibility, call the version with etag parameter using empty etag
+    return getMetadataJSONObjectInner(metadata_file_path, "", object_storage, configuration_ptr, cache_ptr, local_context, log, compression_method);
+}
+
+
+Poco::JSON::Object::Ptr getMetadataJSONObject(
+    const String & metadata_file_path,
+    UInt64 last_modify_time,
+    ObjectStoragePtr object_storage,
+    StorageObjectStorageConfigurationPtr configuration_ptr,
+    IcebergMetadataFilesCachePtr cache_ptr,
+    const ContextPtr & local_context,
+    LoggerPtr log,
+    CompressionMethod compression_method)
+{
+    return getMetadataJSONObjectInner(
+        metadata_file_path,
+        std::to_string(last_modify_time),
+        object_storage,
+        configuration_ptr,
+        cache_ptr,
+        local_context,
+        log,
+        compression_method);
 }
 
 static CompressionMethod getCompressionMethodFromMetadataFile(const String & path)
@@ -320,7 +356,7 @@ static CompressionMethod getCompressionMethodFromMetadataFile(const String & pat
     return compression_method;
 }
 
-static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
+static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path, UInt64 last_modify_time_)
 {
     String file_name(path.begin() + path.find_last_of('/') + 1, path.end());
     String version_str;
@@ -338,6 +374,7 @@ static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string
     return MetadataFileWithInfo{
         .version = std::stoi(version_str),
         .path = path,
+        .last_modify_time = last_modify_time_,
         .compression_method = getCompressionMethodFromMetadataFile(path)};
 }
 
@@ -652,9 +689,12 @@ MetadataFileWithInfo getLatestMetadataFileAndVersion(
         = configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value
         ? MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD
         : MostRecentMetadataFileSelectionWay::BY_METADATA_FILE_VERSION;
+    LOG_TRACE(log, "Selecting most recent metadata file by {}",
+        selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD ? "last-updated-ms field" : "metadata file version");
+
     bool need_all_metadata_files_parsing
         = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD) || table_uuid.has_value();
-    const auto metadata_files = listFiles(*object_storage, *configuration_ptr, "metadata", ".metadata.json");
+    const auto metadata_files = listFilesWithLastModifiedTime(*object_storage, *configuration_ptr, "metadata", ".metadata.json");
     if (metadata_files.empty())
     {
         throw Exception(
@@ -662,12 +702,14 @@ MetadataFileWithInfo getLatestMetadataFileAndVersion(
     }
     std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
     metadata_files_with_versions.reserve(metadata_files.size());
-    for (const auto & path : metadata_files)
+    for (const auto & pair : metadata_files)
     {
-        auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
+        String path = pair.first;
+        UInt64 last_time = pair.second;
+        auto [version, metadata_file_path, last_modify_time, compression_method] = getMetadataFileAndVersion(path, last_time);
         if (need_all_metadata_files_parsing)
         {
-            auto metadata_file_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log, compression_method);
+            auto metadata_file_object = getMetadataJSONObject(metadata_file_path, last_modify_time, object_storage, configuration_ptr, cache_ptr, local_context, log, compression_method);
             if (table_uuid.has_value())
             {
                 if (metadata_file_object->has(Iceberg::f_table_uuid))
@@ -695,7 +737,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersion(
         }
         else
         {
-            metadata_files_with_versions.emplace_back(version, 0, metadata_file_path);
+            metadata_files_with_versions.emplace_back(version, last_modify_time, metadata_file_path);
         }
     }
 
@@ -717,7 +759,11 @@ MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 [](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b) { return a.version < b.version; });
         }
     }();
-    return {latest_metadata_file_info.version, latest_metadata_file_info.path, getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
+    return {
+        latest_metadata_file_info.version,
+        latest_metadata_file_info.path,
+        latest_metadata_file_info.last_updated_ms,
+        getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
 }
 
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
@@ -744,7 +790,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
             auto prefix_storage_path = configuration_ptr->getPathForRead().path;
             if (!explicit_metadata_path.starts_with(prefix_storage_path))
                 explicit_metadata_path = std::filesystem::path(prefix_storage_path) / explicit_metadata_path;
-            return getMetadataFileAndVersion(explicit_metadata_path);
+            return getMetadataFileAndVersion(explicit_metadata_path, 0);
         }
         catch (const std::exception & ex)
         {
@@ -773,7 +819,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
         }
         LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", metadata_file);
         ProfileEvents::increment(ProfileEvents::IcebergVersionHintUsed);
-        return getMetadataFileAndVersion(std::filesystem::path(prefix_storage_path) / "metadata" / metadata_file);
+        return getMetadataFileAndVersion(std::filesystem::path(prefix_storage_path) / "metadata" / metadata_file, 0);
     }
     else
     {

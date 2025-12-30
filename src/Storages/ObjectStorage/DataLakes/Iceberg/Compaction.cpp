@@ -120,11 +120,11 @@ Plan getPlan(
     Plan plan;
     plan.generator = FileNamesGenerator(configuration->getRawPath().path, configuration->getRawPath().path, false, compression_method);
 
-    const auto [metadata_version, metadata_file_path, _]
+    const auto [metadata_version, metadata_file_path, last_modify_time, _]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, log.get());
 
     Poco::JSON::Object::Ptr initial_metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, configuration, nullptr, context, log, compression_method);
+        = getMetadataJSONObject(metadata_file_path, last_modify_time, object_storage, configuration, nullptr, context, log, compression_method);
 
     if (initial_metadata_object->getValue<Int32>(Iceberg::f_format_version) < 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compaction is supported only for format_version 2.");

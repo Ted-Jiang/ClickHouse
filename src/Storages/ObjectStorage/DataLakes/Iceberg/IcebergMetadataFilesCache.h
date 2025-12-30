@@ -104,6 +104,11 @@ public:
         return std::filesystem::path(config->getDataSourceDescription()) / data_path;
     }
 
+    static String getKey(StorageObjectStorageConfigurationPtr config, const String & data_path, const String & etag)
+    {
+        return std::filesystem::path(config->getDataSourceDescription()) / data_path / etag;
+    }
+
     template <typename LoadFunc>
     String getOrSetTableMetadata(const String & data_path, LoadFunc && load_fn)
     {

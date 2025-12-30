@@ -388,7 +388,7 @@ void mutate(
     FileNamesGenerator filename_generator(configuration->getRawPath().path, configuration->getRawPath().path, false, CompressionMethod::None);
 
     auto log = getLogger("IcebergMutations");
-    auto [last_version, metadata_path, compression_method]
+    auto [last_version, metadata_path, last_modify_time, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, log.get());
 
     filename_generator.setVersion(last_version + 1);
@@ -442,7 +442,7 @@ void alter(
 
     FileNamesGenerator filename_generator(configuration->getRawPath().path, configuration->getRawPath().path, false, CompressionMethod::None);
     auto log = getLogger("IcebergMutations");
-    auto [last_version, metadata_path, compression_method]
+    auto [last_version, metadata_path, last_modify_time, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, log.get());
 
     filename_generator.setVersion(last_version + 1);

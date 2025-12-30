@@ -227,7 +227,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 
     std::lock_guard lock(mutex);
 
-    const auto [metadata_version, metadata_file_path, compression_method]
+    const auto [metadata_version, metadata_file_path, last_modify_time, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, persistent_components.metadata_cache, local_context, log.get());
 
     if (last_metadata_version != metadata_version)
@@ -235,7 +235,15 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
         last_metadata_version = metadata_version;
     }
 
-    auto metadata_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, persistent_components.metadata_cache, local_context, log, compression_method);
+    auto metadata_object = getMetadataJSONObject(
+        metadata_file_path,
+        last_modify_time,
+        object_storage,
+        configuration_ptr,
+        persistent_components.metadata_cache,
+        local_context,
+        log,
+        compression_method);
     chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
 
     auto previous_snapshot_id = relevant_snapshot_id;
@@ -581,9 +589,10 @@ DataLakeMetadataPtr IcebergMetadata::create(
     else
         LOG_TRACE(log, "Not using in-memory cache for iceberg metadata files, because the setting use_iceberg_metadata_files_cache is false.");
 
-    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, cache_ptr, local_context, log.get());
+    const auto [metadata_version, metadata_file_path, last_modify_time,compression_method] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, cache_ptr, local_context, log.get());
 
-    Poco::JSON::Object::Ptr object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log, compression_method);
+    Poco::JSON::Object::Ptr object = getMetadataJSONObject(
+        metadata_file_path, last_modify_time, object_storage, configuration_ptr, cache_ptr, local_context, log, compression_method);
 
     auto format_version = object->getValue<int>(f_format_version);
 
@@ -601,7 +610,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
 {
     auto configuration_ptr = configuration.lock();
 
-    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, persistent_components.metadata_cache, local_context, log.get());
+    const auto [metadata_version, metadata_file_path, last_modify_time, compression_method] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, persistent_components.metadata_cache, local_context, log.get());
 
     chassert([&]()
     {
@@ -609,7 +618,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         return metadata_version == last_metadata_version;
     }());
 
-    auto metadata_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, persistent_components.metadata_cache, local_context, log, compression_method);
+    auto metadata_object = getMetadataJSONObject(metadata_file_path, last_modify_time,object_storage, configuration_ptr, persistent_components.metadata_cache, local_context, log, compression_method);
     chassert([&]()
     {
         SharedLockGuard lock(mutex);

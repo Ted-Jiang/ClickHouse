@@ -1167,7 +1167,7 @@ IcebergStorageSink::IcebergStorageSink(
 {
     configuration->update(object_storage, context, true, false);
     auto log = getLogger("IcebergWrites");
-    auto [last_version, metadata_path, compression_method]
+    auto [last_version, metadata_path, last_modify_time,compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_, nullptr, context_, log.get());
 
     metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);
