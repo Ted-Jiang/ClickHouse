@@ -63,6 +63,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
     {
         storage = std::make_shared<StorageObjectStorageCluster>(
             ITableFunctionCluster<Base>::cluster_name,
+            "", //todo
             configuration,
             object_storage,
             StorageID(Base::getDatabaseName(), table_name),

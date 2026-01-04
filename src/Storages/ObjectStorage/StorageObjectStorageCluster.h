@@ -12,6 +12,7 @@ class StorageObjectStorageCluster : public IStorageCluster
 public:
     StorageObjectStorageCluster(
         const String & cluster_name_,
+        const String & engine_name_,
         StorageObjectStorageConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
         const StorageID & table_id_,
@@ -32,6 +33,8 @@ public:
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
+    void setArgs(const ASTs & args_)  { arg = args_; }
+    ASTs getArgs() const { return arg; }
 
 private:
     void updateQueryToSendIfNeeded(
@@ -42,6 +45,7 @@ private:
     const String engine_name;
     const StorageObjectStorageConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
+    ASTs arg;
     NamesAndTypesList virtual_columns;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };

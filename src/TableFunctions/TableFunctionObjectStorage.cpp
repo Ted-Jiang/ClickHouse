@@ -195,6 +195,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     {
         storage = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,
+            "", // todo engine name
             configuration,
             getObjectStorage(context, !is_insert_query),
             StorageID(getDatabaseName(), table_name),

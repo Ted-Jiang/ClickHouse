@@ -12,9 +12,11 @@
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
 #include <Storages/StorageFactory.h>
+#include <Parsers/ASTLiteral.h>
 #include <Poco/Logger.h>
 
 namespace DB
@@ -89,6 +91,72 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         /* is_datalake_query*/ false,
         /* distributed_processing */ false,
         partition_by);
+}
+std::shared_ptr<StorageObjectStorageCluster> createStorageObjectStorageCluster(
+    const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration, String const & engine_name)
+{
+    auto & engine_args = args.engine_args;
+    if (engine_args.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
+
+    // Extract cluster name from first argument
+    String cluster_name;
+    if (const auto * cluster_name_arg = engine_args[0]->as<ASTLiteral>())
+    {
+        cluster_name = cluster_name_arg->value.safeGet<String>();
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "First argument (cluster name) must be a string literal");
+    }
+
+    const auto context = args.getLocalContext();
+
+    // Initialize configuration with arguments starting from the second argument (after cluster name)
+    // which means no need pass cluster name
+    ASTs args_without_cluster_name = engine_args;
+    args_without_cluster_name.erase(args_without_cluster_name.begin());
+    StorageObjectStorageConfiguration::initialize(*configuration, args_without_cluster_name, context, true);
+
+    // Use format settings from global server context + settings from
+    // the SETTINGS clause of the create query. Settings from current
+    // session and user are ignored.
+    std::optional<FormatSettings> format_settings;
+    if (args.storage_def->settings)
+    {
+        Settings settings = context->getSettingsCopy();
+
+        // Apply changes from SETTINGS clause, with validation.
+        settings.applyChanges(args.storage_def->settings->changes);
+
+        format_settings = getFormatSettings(context, settings);
+    }
+    else
+    {
+        format_settings = getFormatSettings(context);
+    }
+
+    ASTPtr partition_by;
+    if (args.storage_def->partition_by)
+        partition_by = args.storage_def->partition_by->clone();
+
+    ContextMutablePtr context_copy = Context::createCopy(args.getContext());
+    Settings settings_copy = args.getLocalContext()->getSettingsCopy();
+    context_copy->setSettings(settings_copy);
+
+    auto res = std::make_shared<StorageObjectStorageCluster>(
+        cluster_name,
+        engine_name,
+        configuration,
+        configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE),
+        args.table_id,
+        args.columns,
+        args.constraints,
+        partition_by,
+        context_copy);
+
+    res->setArgs(engine_args);
+    return res;
 }
 
 #endif
@@ -230,6 +298,23 @@ void registerStorageIceberg(StorageFactory & factory)
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         });
+
+    factory.registerStorage(
+        IcebergS3ClusterDefinition::storage_engine_name,
+        [&](const StorageFactory::Arguments & args)
+        {
+            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
+            auto configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
+            return createStorageObjectStorageCluster(args, configuration, IcebergS3ClusterDefinition::storage_engine_name);
+        },
+        {
+            .supports_settings = true,
+            .supports_sort_order = true,
+            .supports_schema_inference = true,
+            .source_access_type = AccessTypeObjects::Source::S3,
+            .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+        });
+
 #    endif
 #    if USE_AZURE_BLOB_STORAGE
     factory.registerStorage(
@@ -256,6 +341,22 @@ void registerStorageIceberg(StorageFactory & factory)
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
             auto configuration = std::make_shared<StorageHDFSIcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
+        },
+        {
+            .supports_settings = true,
+            .supports_sort_order = true,
+            .supports_schema_inference = true,
+            .source_access_type = AccessTypeObjects::Source::HDFS,
+            .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+        });
+
+    factory.registerStorage(
+        IcebergHDFSClusterDefinition::storage_engine_name,
+        [&](const StorageFactory::Arguments & args)
+        {
+            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
+            auto configuration = std::make_shared<StorageHDFSIcebergConfiguration>(storage_settings);
+            return createStorageObjectStorageCluster(args, configuration, IcebergHDFSClusterDefinition::storage_engine_name);
         },
         {
             .supports_settings = true,
