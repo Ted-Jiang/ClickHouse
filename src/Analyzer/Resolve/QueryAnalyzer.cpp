@@ -24,6 +24,7 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/StorageJoin.h>
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
@@ -5664,6 +5665,37 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         }
         case QueryTreeNodeType::TABLE:
         {
+            // Check if this is a cluster storage table that needs to be rewritten as table function
+            auto * table_node = join_tree_node->as<TableNode>();
+            if (table_node)
+            {
+                auto storage = table_node->getStorage();
+                auto storageCluster = std::dynamic_pointer_cast<StorageObjectStorageCluster>(storage);
+                if (storageCluster)
+                {
+                    String engine_name = storageCluster->getName();
+
+                    // If this is a cluster storage engine (ends with "Cluster"),
+                    // convert it to corresponding table function
+                    if (engine_name.starts_with("Iceberg") && engine_name.ends_with("Cluster"))
+                    {
+                        // Create table function node to replace the table node and change EngineName to corresponding table function
+                        auto table_function_node = std::make_shared<TableFunctionNode>(engine_name.replace(0, 1, "i"));
+                        table_function_node->setAlias(table_node->getAlias());
+                        ASTs args = storageCluster->getArgs();
+                        for (const auto & arg : args)
+                        {
+                            QueryTreeNodePtr query_tree_arg = buildQueryTree(arg, scope.context);
+                            table_function_node->getArguments().getNodes().push_back(query_tree_arg);
+                        }
+                        // Replace the table node with table function node
+                        join_tree_node = table_function_node;
+
+                        // Now resolve the table function
+                        resolveTableFunction(join_tree_node, scope, expressions_visitor, false /*nested_table_function*/);
+                    }
+                }
+            }
             break;
         }
         case QueryTreeNodeType::ARRAY_JOIN:
