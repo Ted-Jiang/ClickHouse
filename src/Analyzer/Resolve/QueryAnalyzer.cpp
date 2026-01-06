@@ -25,6 +25,8 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessFlags.h>
 
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
@@ -140,6 +142,7 @@ namespace ErrorCodes
     extern const int MULTIPLE_EXPRESSIONS_FOR_ALIAS;
     extern const int TYPE_MISMATCH;
     extern const int AMBIGUOUS_IDENTIFIER;
+    extern const int ACCESS_DENIED;
     extern const int INVALID_WITH_FILL_EXPRESSION;
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
@@ -5679,6 +5682,17 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     // convert it to corresponding table function
                     if (engine_name.starts_with("Iceberg") && engine_name.ends_with("Cluster"))
                     {
+                        // Get table identifier for permission check
+                        StorageID storage_id = table_node->getStorageID();
+                        String database_name = storage_id.database_name;
+                        String table_name = storage_id.table_name;
+
+                        // Perform SELECT access control check
+                        if (scope.context && scope.context->getAccess() && !table_name.empty())
+                        {
+                            scope.context->getAccess()->checkAccess(AccessType::SELECT, database_name, table_name);
+                        }
+
                         // Create table function node to replace the table node and change EngineName to corresponding table function
                         auto table_function_node = std::make_shared<TableFunctionNode>(engine_name.replace(0, 1, "i"));
                         table_function_node->setAlias(table_node->getAlias());

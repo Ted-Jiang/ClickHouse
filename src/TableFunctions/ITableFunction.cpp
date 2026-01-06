@@ -38,14 +38,24 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
 {
     ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
 
-    if (const auto access_object = getSourceAccessObject())
-    {
-        AccessType type_to_check = AccessType::READ;
-        if (is_insert_query)
-            type_to_check = AccessType::WRITE;
 
-        context->getAccess()->checkAccessWithFilter(type_to_check, toStringSource(*access_object), getFunctionURI());
+    // For INSERT operations on IcebergCluster tables, block directly
+    if (is_insert_query)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "INSERT operations are not allowed on IcebergCluster tables that are converted to table functions");
     }
+
+//    we already check the access for rewrite table engine icebergCluster -> table function
+
+//    if (const auto access_object = getSourceAccessObject())
+//    {
+//        AccessType type_to_check = AccessType::READ;
+//        if (is_insert_query)
+//            type_to_check = AccessType::WRITE;
+//
+//        context->getAccess()->checkAccessWithFilter(type_to_check, toStringSource(*access_object), getFunctionURI());
+//    }
 
     auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
     if (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly))
