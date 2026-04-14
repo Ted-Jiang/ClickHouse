@@ -41,6 +41,7 @@ public:
                 return nullptr;
 
             auto key = data_files[current_index];
+            // we need do the cache of this
             auto object_metadata = object_storage->getObjectMetadata(key, /*with_tags=*/ false);
 
             if (callback)

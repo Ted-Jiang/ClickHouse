@@ -14,6 +14,7 @@
 # {BUILD_DIR}/contrib/arrow/cpp/build/release/parquet-reader some_file.parquet
 
 set (ENABLE_PARQUET_DEFAULT ${ENABLE_LIBRARIES})
+set (USE_JNI_HDFS ON)
 if (OS_FREEBSD)
     set (ENABLE_PARQUET_DEFAULT OFF)
 endif()
@@ -102,7 +103,13 @@ target_compile_definitions(_flatbuffers PRIVATE -DFLATBUFFERS_LOCALE_INDEPENDENT
 
 # ===  hdfs
 # NOTE: cannot use ch_contrib::hdfs since it's INCLUDE_DIRECTORIES does not includes trailing "hdfs/"
-set(HDFS_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libhdfs3/include/hdfs/")
+if (USE_JNI_HDFS)
+    message(STATUS "Using USE_JNI_HDFS")
+    set(HDFS_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/include/")
+else ()
+    message(STATUS "Not using USE_JNI_HDFS")
+    set(HDFS_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/include/")
+endif ()
 
 # arrow-cmake cmake file calling orc cmake subroutine which detects certain compiler features.
 # Apple Clang compiler failed to compile this code without specifying c++11 standard.
@@ -347,7 +354,9 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/io/compressed.cc"
         "${LIBRARY_DIR}/io/file.cc"
         "${LIBRARY_DIR}/io/hdfs.cc"
+        "${LIBRARY_DIR}/io/hdfs.h"
         "${LIBRARY_DIR}/io/hdfs_internal.cc"
+        "${LIBRARY_DIR}/io/hdfs_internal.h"
         "${LIBRARY_DIR}/io/interfaces.cc"
         "${LIBRARY_DIR}/io/memory.cc"
         "${LIBRARY_DIR}/io/slow.cc"
@@ -458,6 +467,11 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/vendored/uriparser/UriResolve.c"
         "${LIBRARY_DIR}/vendored/uriparser/UriShorten.c"
         "${LIBRARY_DIR}/visitor.cc"
+        "${LIBRARY_DIR}/filesystem/filesystem.cc"
+        "${LIBRARY_DIR}/filesystem/hdfs.cc"
+        "${LIBRARY_DIR}/filesystem/localfs.cc"
+        "${LIBRARY_DIR}/filesystem/path_util.cc"
+        "${LIBRARY_DIR}/filesystem/util_internal.cc"
 
         "${ARROW_SRC_DIR}/arrow/adapters/orc/adapter.cc"
         "${ARROW_SRC_DIR}/arrow/adapters/orc/util.cc"
@@ -485,6 +499,17 @@ SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_zstd.cc" ${ARROW_SRCS})
 
 add_library(_arrow ${ARROW_SRCS})
 add_library(ch_contrib::arrow ALIAS _arrow)
+
+
+if (USE_JNI_HDFS)
+    if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/include/hdfs.h")
+        message (FATAL_ERROR "xxx/contrib/arrow-cmake/include/hdfs.h  not found")
+    else()
+        message (STATUS "Using hdfs.h from ${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/include/")
+    endif ()
+    target_include_directories(_arrow SYSTEM BEFORE INTERFACE "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/include/")
+endif ()
+
 
 target_link_libraries(_arrow PRIVATE
     boost::filesystem

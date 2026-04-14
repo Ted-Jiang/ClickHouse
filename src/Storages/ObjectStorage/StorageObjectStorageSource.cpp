@@ -814,7 +814,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         use_filesystem_cache = effective_read_settings.enable_filesystem_cache
             && !filesystem_cache_name.empty()
             && (object_storage->getType() == ObjectStorageType::Azure
-                || object_storage->getType() == ObjectStorageType::S3);
+                || object_storage->getType() == ObjectStorageType::S3
+                || object_storage->getType() == ObjectStorageType::JNIHDFS);
     }
 
     bool use_page_cache = !use_distributed_cache && !use_filesystem_cache

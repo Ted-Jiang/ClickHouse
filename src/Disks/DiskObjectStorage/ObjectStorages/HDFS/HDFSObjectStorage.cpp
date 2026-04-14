@@ -14,7 +14,7 @@
 #include <Interpreters/BlobStorageLog.h>
 
 
-#if USE_HDFS
+#if USE_HDFS && !USE_JNI_HDFS
 
 namespace DB
 {

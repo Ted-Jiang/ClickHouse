@@ -43,7 +43,7 @@ if (NOT LINKER_NAME)
     elseif (OS_DARWIN)
         ch_find_program (LLD_PATH NAMES "ld")
         # Duplicate libraries passed to the linker is not a problem.
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no_warn_duplicate_libraries")
+        # set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no_warn_duplicate_libraries")
     endif ()
     if (LLD_PATH)
         if (OS_LINUX OR OS_DARWIN)
