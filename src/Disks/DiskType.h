@@ -21,8 +21,8 @@ enum class ObjectStorageType : uint8_t
     HDFS = 3,
     Web = 4,
     Local = 5,
-
-    Max = 6,
+    JNIHDFS = 6,
+    Max = 7,
 };
 
 enum class MetadataStorageType : uint8_t

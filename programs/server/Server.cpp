@@ -1236,7 +1236,7 @@ try
 
     MainThreadStatus::getInstance();
 
-#if USE_JEMALLOC
+#if USE_JEMALLOC && defined(OS_LINUX)
     Jemalloc::verifySetup(
         server_settings[ServerSetting::jemalloc_enable_global_profiler],
         server_settings[ServerSetting::jemalloc_enable_background_threads],

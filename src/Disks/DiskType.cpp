@@ -71,6 +71,8 @@ String DataSourceDescription::name() const
                     return "local_blob_storage";
                 case ObjectStorageType::Web:
                     return "web";
+                case ObjectStorageType::JNIHDFS:
+                    return "jni_hdfs";
                 case ObjectStorageType::None:
                     return "none";
                 case ObjectStorageType::Max:

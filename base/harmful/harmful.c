@@ -81,8 +81,7 @@ TRAP(getprotoent)
 TRAP(getpwent)
 TRAP(getpwent_r)
 TRAP(getpwnam)
-TRAP(getpwuid)
-TRAP(getservbyname)
+// TRAP(getpwuid) // used by jni_helper.c
 TRAP(getservbyport)
 TRAP(getservent)
 TRAP(getutent)
@@ -163,7 +162,7 @@ TRAP(sleep) // Used by libFuzzer
 TRAP(srand48)
 //TRAP(strerror) // Used by RocksDB and many other libraries, unfortunately.
 //TRAP(strsignal) // This function is imported from Musl and is thread safe.
-TRAP(strtok)
+// TRAP(strtok) // Used by jni_helper.c https://github.com/apache/hadoop/blob/trunk/hadoop-hdfs-project/hadoop-hdfs-native-client/src/main/native/libhdfs/jni_helper.c#L511
 TRAP(tcflow)
 TRAP(tcsendbreak)
 TRAP(tmpnam)
@@ -200,7 +199,7 @@ TRAP(lgamma)
 TRAP(lgammaf)
 TRAP(lgammal)
 TRAP(nftw)
-TRAP(nl_langinfo)
+// TRAP(nl_langinfo) // used by jni_helper.c https://github.com/apache/hadoop/blob/trunk/hadoop-hdfs-project/hadoop-hdfs-native-client/src/main/native/libhdfs/jni_helper.c#L735
 TRAP(putc_unlocked)
 /** In  the current POSIX.1 specification (POSIX.1-2008), readdir() is not required to be thread-safe.  However, in modern
   * implementations (including the glibc implementation), concurrent calls to readdir() that specify different directory streams

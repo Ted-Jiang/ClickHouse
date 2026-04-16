@@ -19,6 +19,10 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 
+#if USE_JNI_HDFS
+#include <Disks/DiskObjectStorage/ObjectStorages/HDFS/JNIHDFSObjectStorage.h>
+#endif
+
 namespace DB
 {
 namespace Setting
@@ -44,7 +48,7 @@ namespace ErrorCodes
 void StorageHDFSConfiguration::check(ContextPtr context)
 {
     context->getRemoteHostFilter().checkURL(Poco::URI(url));
-    checkHDFSURL(fs::path(url) / path.path.substr(1));
+    //checkHDFSURL(std::filesystem::path(url) / path.path.substr(1));
     StorageObjectStorageConfiguration::check(context);
 }
 
@@ -56,8 +60,13 @@ ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage( /// NOLINT
     assertInitialized();
     const auto & settings = context->getSettingsRef();
     auto hdfs_settings = std::make_unique<HDFSObjectStorageSettings>(settings[Setting::remote_read_min_bytes_for_seek], settings[Setting::hdfs_replication]);
+#ifdef USE_JNI_HDFS
+    return std::make_shared<JNIHDFSObjectStorage>(
+        url, std::move(hdfs_settings), context->getConfigRef(), /* lazy_initialize */true);
+#else
     return std::make_shared<HDFSObjectStorage>(
         url, std::move(hdfs_settings), context->getConfigRef(), /* lazy_initialize */true);
+#endif
 }
 
 StorageObjectStorageQuerySettings StorageHDFSConfiguration::getQuerySettings(const ContextPtr & context) const

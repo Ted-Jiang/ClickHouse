@@ -2,7 +2,7 @@
 
 #include "config.h"
 
-#if USE_HDFS
+#if USE_HDFS && !USE_JNI_HDFS
 #include <memory>
 
 #    include <IO/AsynchronousReader.h>

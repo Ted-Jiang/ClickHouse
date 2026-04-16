@@ -93,7 +93,7 @@ bool DatabaseHDFS::checkUrl(const std::string & url, ContextPtr context_, bool t
 {
     try
     {
-        checkHDFSURL(url);
+        //checkHDFSURL(url);
         context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(url));
     }
     catch (...)

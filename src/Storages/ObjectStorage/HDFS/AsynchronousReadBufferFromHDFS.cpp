@@ -1,6 +1,6 @@
 #include <Storages/ObjectStorage/HDFS/AsynchronousReadBufferFromHDFS.h>
 
-#if USE_HDFS
+#if USE_HDFS && !USE_JNI_HDFS
 #include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
 #include <mutex>
 #include <Common/logger_useful.h>

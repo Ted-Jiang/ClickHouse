@@ -1,37 +1,34 @@
+//
+// Created by Jiang, Yang on 2025/5/8.
+//
+
 #pragma once
 
 #include "config.h"
+#include "Disks/DiskObjectStorage/ObjectStorages/HDFS/JNIHDFSObjectStorage.h"
 
-#if USE_HDFS && !USE_JNI_HDFS
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <string>
 #include <memory>
-#include <hdfs/hdfs.h>
 #include <base/types.h>
+#include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFileBase.h>
 
-namespace Poco
-{
-namespace Util
-{
-class AbstractConfiguration;
-}
-}
+#include "arrow/io/hdfs_internal.h"
+#include "arrow/io/hdfs.h"
 
 namespace DB
 {
-
-struct ReadSettings;
-
 /** Accepts HDFS path to file and opens it.
  * Closes file by himself (thus "owns" a file descriptor).
  */
-class ReadBufferFromHDFS : public ReadBufferFromFileBase
+class JNIReadBufferFromHDFS : public ReadBufferFromFileBase
 {
-struct ReadBufferFromHDFSImpl;
+    struct JNIReadBufferFromHDFSImpl;
 
 public:
-    ReadBufferFromHDFS(
+    JNIReadBufferFromHDFS(
         const String & hdfs_uri_,
         const String & hdfs_file_path_,
         const Poco::Util::AbstractConfiguration & config_,
@@ -40,7 +37,9 @@ public:
         bool use_external_buffer = false,
         std::optional<size_t> file_size = std::nullopt);
 
-    ~ReadBufferFromHDFS() override;
+
+
+    ~JNIReadBufferFromHDFS() override;
 
     bool nextImpl() override;
 
@@ -59,9 +58,8 @@ public:
     bool supportsReadAt() override;
 
 private:
-    std::unique_ptr<ReadBufferFromHDFSImpl> impl;
+    std::unique_ptr<JNIReadBufferFromHDFSImpl> impl;
     bool use_external_buffer;
 };
 }
 
-#endif
