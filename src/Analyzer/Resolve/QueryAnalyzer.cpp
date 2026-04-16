@@ -25,6 +25,10 @@
 #include <Analyzer/ValidationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Analyzer/WindowNode.h>
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessFlags.h>
+
 
 #include <Analyzer/Resolve/CorrelatedColumnsCollector.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
@@ -114,6 +118,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int UNEXPECTED_EXPRESSION;
     extern const int SYNTAX_ERROR;
+    extern const int ACCESS_DENIED;
 }
 
 QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
@@ -4794,6 +4799,45 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         case QueryTreeNodeType::TABLE:
         {
             auto * table_node = join_tree_node->as<TableNode>();
+            if (table_node)
+            {
+                auto storage = table_node->getStorage();
+                if (auto storageCluster = std::dynamic_pointer_cast<StorageObjectStorageCluster>(storage))
+                {
+                    String engine_name = storageCluster->getName();
+
+                    // If this is a cluster storage engine (ends with "Cluster"),
+                    // convert it to corresponding table function
+                    if (engine_name.starts_with("Iceberg") && engine_name.ends_with("Cluster"))
+                    {
+                        // Get table identifier for permission check
+                        StorageID storage_id = table_node->getStorageID();
+                        String database_name = storage_id.database_name;
+                        String table_name = storage_id.table_name;
+
+                        // Perform SELECT access control check
+                        if (scope.context && scope.context->getAccess() && !table_name.empty())
+                        {
+                            scope.context->getAccess()->checkAccess(AccessType::SELECT, database_name, table_name);
+                        }
+
+                        // Create table function node to replace the table node and change EngineName to corresponding table function
+                        auto table_function_node = std::make_shared<TableFunctionNode>(engine_name.replace(0, 1, "i"));
+                        table_function_node->setAlias(table_node->getAlias());
+                        ASTs args = storageCluster->getArgs();
+                        for (const auto & arg : args)
+                        {
+                            QueryTreeNodePtr query_tree_arg = buildQueryTree(arg, scope.context);
+                            table_function_node->getArguments().getNodes().push_back(query_tree_arg);
+                        }
+                        // Replace the table node with table function node
+                        join_tree_node = table_function_node;
+                        // Now resolve the table function
+                        resolveTableFunction(join_tree_node, scope, expressions_visitor, false /*nested_table_function*/);
+                        break;
+                    }
+                }
+            }
             if (table_node->isMaterializedCTE())
             {
                 auto materialized_cte_ptr = table_node->getMaterializedCTE();

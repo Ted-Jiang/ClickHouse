@@ -57,11 +57,12 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
 {
     ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
 
-    checkSourceAccess(context, is_insert_query);
-
-    auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
-    if (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly))
-        context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
+    // checkSourceAccess(context, is_insert_query);
+    if (is_insert_query)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "INSERT operations are not allowed on IcebergCluster tables that are converted to table functions");
+    }
 
     auto context_to_use = use_global_context ? context->getGlobalContext() : context;
 

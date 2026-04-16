@@ -60,6 +60,7 @@ String StorageObjectStorageCluster::getPathSample(ContextPtr context)
 
 StorageObjectStorageCluster::StorageObjectStorageCluster(
     const String & cluster_name_,
+    const String & engine_name_,
     StorageObjectStorageConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
     const StorageID & table_id_,
@@ -70,6 +71,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     bool is_table_function)
     : IStorageCluster(
         cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
+    , engine_name(engine_name_)
     , configuration{configuration_}
     , object_storage(object_storage_)
 {
@@ -131,7 +133,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
 
 std::string StorageObjectStorageCluster::getName() const
 {
-    return configuration->getEngineName();
+    return engine_name;
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
@@ -163,7 +165,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Expected SELECT query from table function {}, got '{}'",
+            "Expected SELECT query from table function {}, got '{}' missing table_function",
             configuration->getEngineName(), query->formatForErrorMessage());
     }
 
