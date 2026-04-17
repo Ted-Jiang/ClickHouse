@@ -509,6 +509,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     {
         case PruningReturnStatus::NOT_PRUNED: {
             std::lock_guard lock(files_mutex);
+            ++not_pruned_files;
             switch (entry->parsed_entry->content_type)
             {
                 case FileContentType::EQUALITY_DELETE: {
@@ -527,10 +528,12 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
             UNREACHABLE();
         }
         case PruningReturnStatus::MIN_MAX_INDEX_PRUNED: {
+            ++min_max_index_pruned_files;
             ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunedFiles);
             return nullptr;
         }
         case PruningReturnStatus::PARTITION_PRUNED: {
+            ++partition_pruned_files;
             ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedFiles);
             return nullptr;
         }

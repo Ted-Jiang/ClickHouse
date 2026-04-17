@@ -5,13 +5,13 @@
 
 #if USE_AVRO
 
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
-#include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
-#include <Storages/KeyDescription.h>
+#    include <Storages/KeyDescription.h>
+#    include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
+#    include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#    include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
-#include <mutex>
-#include <unordered_map>
+#    include <mutex>
+#    include <unordered_map>
 
 namespace DB::Iceberg
 {
@@ -112,6 +112,10 @@ public:
     ManifestFileIterator(ManifestFileIterator &&) = delete;
     ManifestFileIterator & operator=(ManifestFileIterator &&) = delete;
 
+    size_t getMinMaxIndexPrunedFilesCount() const { return min_max_index_pruned_files; }
+    size_t getPartitionPrunedFilesCount() const { return partition_pruned_files; }
+    size_t getNotPrunedFilesCount() const { return not_pruned_files; }
+
 private:
     ManifestFileIterator(
         std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer,
@@ -169,6 +173,12 @@ private:
     mutable std::mutex pruners_mutex;
     std::unordered_map<Int32, std::unique_ptr<ManifestFilesPruner>> pruners_by_schema_id;
     const ManifestFilesPruner * getOrCreatePruner(Int32 schema_id);
+
+
+    /// For trace info log
+    size_t min_max_index_pruned_files = 0;
+    size_t partition_pruned_files = 0;
+    size_t not_pruned_files = 0;
 };
 
 using ManifestIteratorPtr = std::shared_ptr<ManifestFileIterator>;

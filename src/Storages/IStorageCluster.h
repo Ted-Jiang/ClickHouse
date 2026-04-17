@@ -1,8 +1,9 @@
 #pragma once
 
-#include <Storages/IStorage.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Cluster.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -41,7 +42,8 @@ public:
         const ActionsDAG * filter_actions_dag,
         const ContextPtr & context,
         ClusterPtr cluster,
-        StorageMetadataPtr storage_metadata_snapshot) const
+        StorageMetadataPtr storage_metadata_snapshot,
+        std::vector<std::string> ids_of_hosts) const
         = 0;
 
     QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;

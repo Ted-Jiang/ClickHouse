@@ -167,6 +167,10 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
                 return entry;
 
             /// next() returned nullptr, meaning the manifest file is fully exhausted.
+            min_max_index_pruned_files += current_manifest_file_iterator->getMinMaxIndexPrunedFilesCount();
+            partition_pruned_files += current_manifest_file_iterator->getPartitionPrunedFilesCount();
+            not_pruned_files += current_manifest_file_iterator->getNotPrunedFilesCount();
+
             current_manifest_file_iterator = nullptr;
         }
 
@@ -202,7 +206,21 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
         }
 
         if (!current_manifest_file_iterator)
+        {
+            if (!already_log_pruned)
+            {
+                LOG_TRACE(
+                    log,
+                    "[ICEBERG] partition pruned files: partition_pruned_files:{},"
+                    " min-max index pruned files: {}, not-pruned files: {}",
+                    partition_pruned_files,
+                    min_max_index_pruned_files,
+                    not_pruned_files);
+                already_log_pruned = true;
+            }
             return std::nullopt;
+        }
+
     }
 }
 

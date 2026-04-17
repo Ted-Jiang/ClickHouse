@@ -47,6 +47,12 @@ public:
 
     std::optional<DB::Iceberg::ProcessedManifestFileEntryPtr> next();
 
+    // For trace info log
+    size_t min_max_index_pruned_files = 0;
+    size_t partition_pruned_files = 0;
+    size_t not_pruned_files = 0;
+    bool already_log_pruned = false;
+
 private:
     ObjectStoragePtr object_storage;
     std::shared_ptr<const ActionsDAG> filter_dag;

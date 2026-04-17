@@ -96,6 +96,7 @@ private:
     std::optional<RemoteQueryExecutor::Extension> extension;
 
     void createExtension(const ActionsDAG::Node * predicate);
+    void createExtension(const ActionsDAG::Node * predicate, std::vector<std::string> ids_of_hosts);
     ContextPtr updateSettings(const Settings & settings);
 };
 
@@ -103,11 +104,42 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
 
-    const ActionsDAG::Node * predicate = nullptr;
-    if (filter_actions_dag)
-        predicate = filter_actions_dag->getOutputs().at(0);
+    // const ActionsDAG::Node * predicate = nullptr;
+    // if (filter_actions_dag)
+    //     predicate = filter_actions_dag->getOutputs().at(0);
 
-    createExtension(predicate);
+    // createExtension(predicate);
+}
+
+void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate,  std::vector<std::string> ids_of_hosts)
+{
+    if (extension)
+        return;
+
+    if (filter_actions_dag)
+    {
+        predicate = query_info.filter_actions_dag->getOutputs().at(0);
+        LOG_TRACE(
+            log,
+            "[Notice] Using filter_actions_dag from SelectQueryInfo to pushdown filter for ReadFromCluster: {}",
+            query_info.filter_actions_dag.get()->dumpNames());
+    }
+    else if (query_info.filter_actions_dag)
+    {
+        LOG_TRACE(
+            log,
+            "[Notice] Using filter_actions_dag from ReadFromCluster to pushdown filter for ReadFromCluster: {}",
+            query_info.filter_actions_dag.get()->dumpNames());
+    }
+    else
+        LOG_TRACE(log, "[Notice] No filter_actions_dag, cannot pushdown filter for ReadFromCluster.");
+
+    extension = storage->getTaskIteratorExtension(
+        predicate, filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get(),
+        context,
+        cluster,
+        getStorageSnapshot()->metadata,
+        std::move(ids_of_hosts));
 }
 
 void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
@@ -120,7 +152,8 @@ void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
         filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get(),
         context,
         cluster,
-        getStorageSnapshot()->metadata);
+        getStorageSnapshot()->metadata,
+        {});
 }
 
 /// The code executes on initiator
@@ -198,18 +231,18 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
 
     size_t replica_index = 0;
     auto max_replicas_to_use = static_cast<UInt64>(cluster->getShardsInfo().size());
-    if (current_settings[Setting::max_parallel_replicas] > 1)
+    if (current_settings[Setting::max_parallel_replicas] > 0)
         max_replicas_to_use = std::min(max_replicas_to_use, current_settings[Setting::max_parallel_replicas].value);
 
-    createExtension(nullptr);
+    std::vector<std::string> ids_of_hosts;
+    std::vector<IConnectionPool::Entry> connections;
 
+    // First collect all available hosts
     for (const auto & shard_info : cluster->getShardsInfo())
     {
-        if (pipes.size() >= max_replicas_to_use)
+        if (ids_of_hosts.size() >= max_replicas_to_use)
             break;
 
-        /// We're taking all replicas as shards,
-        /// so each shard will have only one address to connect to.
         auto try_results = shard_info.pool->getMany(
             timeouts,
             current_settings,
@@ -217,13 +250,30 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             {},
             /*skip_unavailable_endpoints=*/true);
 
-        if (try_results.empty())
-            continue;
+        if (!try_results.empty())
+        {
+            // Need port if same host is used in multiple shards
+            auto host = try_results.front()->getHost();
+            auto port = try_results.front()->getPort();
+            auto address = host + ":" + std::to_string(port);
+            ids_of_hosts.emplace_back(address);
+            connections.emplace_back(try_results.front());
+        }
+    }
 
+    if (ids_of_hosts.empty())
+    {
+        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot connect to any replica for query execution");
+    }
+
+    // Initialize extension with collected hosts
+    createExtension(nullptr, std::move(ids_of_hosts));
+
+    for (auto & connection : connections)
+    {
         IConnections::ReplicaInfo replica_info{.number_of_current_replica = replica_index++};
-
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            std::vector<IConnectionPool::Entry>{try_results.front()},
+            std::vector<IConnectionPool::Entry>{connection},
             query_to_send->formatWithSecretsOneLine(),
             getOutputHeader(),
             new_context,
@@ -246,6 +296,16 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
 
     if (pipes.empty())
         throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot connect to any replica for query execution");
+
+    if (pipes.size() < max_replicas_to_use)
+    {
+        LOG_WARNING(
+            log,
+            "[EBAY] Only {} out of {} intended replicas were successfully connected for query execution. "
+            "This may indicate network or connectivity issues with some shards.",
+            pipes.size(),
+            max_replicas_to_use);
+    }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     for (const auto & processor : pipe.getProcessors())

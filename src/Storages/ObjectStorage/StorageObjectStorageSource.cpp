@@ -1276,6 +1276,8 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     , is_archive(is_archive_)
     , object_storage(object_storage_)
 {
+    LOG_TRACE(getLogger("ReadTaskIter"), "Starting ReadTaskIterator with {} threads", max_threads_count);
+
     ThreadPool pool(
         CurrentMetrics::StorageObjectStorageThreads,
         CurrentMetrics::StorageObjectStorageThreadsActive,

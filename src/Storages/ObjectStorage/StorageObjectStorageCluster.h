@@ -29,7 +29,8 @@ public:
         const ActionsDAG * filter,
         const ContextPtr & context,
         ClusterPtr cluster,
-        StorageMetadataPtr storage_metadata_snapshot) const override;
+        StorageMetadataPtr storage_metadata_snapshot,
+        std::vector<std::string>) const override;
 
     String getPathSample(ContextPtr context);
 
