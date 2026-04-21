@@ -19,6 +19,8 @@
 #include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributorV2.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 
 namespace DB
 {
@@ -201,6 +203,36 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         args.erase(args.begin());
         configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
         args.insert(args.begin(), cluster_name_arg);
+
+
+        // For Iceberg tables, pass the current metadata file path to worker nodes
+        // to avoid unnecessary list operations on the metadata directory:
+        // Add iceberg_metadata_file_path if available (to avoid worker listing metadata directory)
+#if USE_AVRO
+        if (configuration->isDataLakeConfiguration())
+        {
+            // Try to cast configuration to DataLakeConfiguration to get metadata file path
+            // Since we can't use the template directly due to type erasure, we get it from metadata
+            if (auto * metadata = configuration->getExternalMetadata())
+            {
+                if (auto * iceberg_metadata = dynamic_cast<IcebergMetadata *>(metadata))
+                {
+                    auto metadata_file_path = iceberg_metadata->getCurrentMetadataFilePath();
+                    if (!settings_temporary_storage)
+                    {
+                        settings_temporary_storage = make_intrusive<ASTSetQuery>();
+                    }
+                    auto * settings_ast = dynamic_cast<ASTSetQuery *>(settings_temporary_storage.get());
+                    settings_ast->is_standalone = false;
+                    settings_ast->changes.insertSetting("iceberg_metadata_file_path", metadata_file_path);
+                    LOG_TRACE(
+                        getLogger("StorageObjectStorageCluster"),
+                        "[META]Setting iceberg_metadata_file_path={} for worker nodes to avoid metadata directory listing",
+                        metadata_file_path);
+                }
+            }
+#endif
+        }
     }
     if (settings_temporary_storage)
     {

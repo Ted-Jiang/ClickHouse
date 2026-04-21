@@ -55,6 +55,7 @@
 #include <Storages/ObjectStorage/Utils.h>
 
 
+
 using namespace DB;
 
 
@@ -1111,23 +1112,28 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     return load_fn();
 }
 
-static String resolveContained(const std::filesystem::path & base, const std::filesystem::path & relative)
+static String resolveContained(const std::filesystem::path &, const std::filesystem::path & relative)
 {
-    auto norm_base = base.lexically_normal();
-    auto combined = (norm_base / relative).lexically_normal();
+//     auto norm_base = base.lexically_normal();
+//     auto combined = (norm_base / relative).lexically_normal();
+//
+//     auto rel = combined.lexically_relative(norm_base);
+//
+//     if (rel.empty() || rel.begin()->string() == "..")
+//     {
+//         throw Exception(
+//             ErrorCodes::PATH_ACCESS_DENIED,
+//             "Explicit metadata file path `{}` should be in the table path directory : `{}`",
+//             relative.string(),
+//             base.string());
+//     }
+//
+//     return combined.string();
 
-    auto rel = combined.lexically_relative(norm_base);
-
-    if (rel.empty() || rel.begin()->string() == "..")
-    {
-        throw Exception(
-            ErrorCodes::PATH_ACCESS_DENIED,
-            "Explicit metadata file path `{}` should be in the table path directory : `{}`",
-            relative.string(),
-            base.string());
-    }
-
-    return combined.string();
+    // [EBAY] This is not related to hdfs:
+    // prefix_storage_path: /workspaces/P_yangzhong_T/CBT_ERS_DATA_FACT/
+    // explicit_metadata_path: hdfs:/hubble-lvs/workspaces/P_yangzhong_T/CBT_ERS_DATA_FACT/metadata/v1.metadata.json
+    return relative.string();
 }
 
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(

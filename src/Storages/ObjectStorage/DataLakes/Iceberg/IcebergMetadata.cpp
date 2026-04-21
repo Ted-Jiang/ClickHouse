@@ -187,6 +187,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
         .metadata_compression_method = compression_method,
         .table_path = configuration->getPathForRead().path,
         .table_uuid = table_uuid,
+        .current_metadata_file_path = metadata_file_path,
     };
 }
 

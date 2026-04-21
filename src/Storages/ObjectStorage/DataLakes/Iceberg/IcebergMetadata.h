@@ -1,4 +1,7 @@
 #pragma once
+#include "Disks/IStoragePolicy.h"
+
+
 #include "config.h"
 
 #if USE_AVRO
@@ -107,6 +110,10 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog) override;
 
     CompressionMethod getCompressionMethod() const { return persistent_components.metadata_compression_method; }
+
+    /// Get the current metadata file path (relative to table directory)
+    /// This can be used to pass the path to worker nodes to avoid re-listing metadata directory
+    String getCurrentMetadataFilePath() const { return persistent_components.current_metadata_file_path; }
 
     bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override;
     bool supportsDelete() const override { return true; }
