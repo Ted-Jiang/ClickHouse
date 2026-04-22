@@ -16,6 +16,9 @@ set(ARROW_FLIGHT_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow/fl
 set(ARROW_FLIGHT_PROTO_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/format)
 set(ARROW_FLIGHT_GENERATED_SRC_DIR ${ARROW_GENERATED_SRC_DIR}/arrow/flight)
 
+# Ensure the generated source directory exists
+file(MAKE_DIRECTORY "${ARROW_FLIGHT_GENERATED_SRC_DIR}")
+
 add_custom_command(
     OUTPUT
         "${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.grpc.pb.cc"
