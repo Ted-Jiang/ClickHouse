@@ -5247,7 +5247,7 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    DECLARE(UInt64, iceberg_metadata_staleness_ms, 0, R"(
+    DECLARE(UInt64, iceberg_metadata_staleness_ms, 7200000, R"(
 If non-zero, skip fetching iceberg metadata from remote catalog if there is a cached metadata snapshot, more recent than the given staleness window. Zero means to always fetch the latest metadata version from the remote catalog. Setting this a non-zero trades staleness to a lower latency of read operations.
 )", 0) \
     DECLARE(Bool, use_parquet_metadata_cache, true, R"(
@@ -7450,7 +7450,7 @@ Show internal auxiliary processes in the `SHOW PROCESSLIST` query output.
 
 Internal processes include dictionary reloads, refreshable materialized view reloads, auxiliary `SELECT`s executed in `SHOW ...` queries, auxiliary `CREATE DATABASE ...` queries executed internally to accommodate broken tables and more.
     )", 0) \
-    DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
+    DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, true, R"(
 Use roaring bitmap for iceberg positional deletes.
 )", 0) \
     DECLARE(Bool, inject_random_order_for_select_without_order_by, false, R"(

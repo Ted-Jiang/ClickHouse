@@ -12,8 +12,11 @@
 #include <Common/Config/ConfigHelper.h>
 #include <Common/DNSResolver.h>
 #include <Common/StringUtils.h>
+#include <Common/Exception.h>
 #include <Common/escapeForFileName.h>
 #include <Common/isLocalAddress.h>
+#include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Common/parseAddress.h>
 #include <Common/randomSeed.h>
 
@@ -403,8 +406,25 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Cluster names with dots are not supported: '{}'", key);
 
         /// If old config is set and cluster config wasn't changed, don't update this cluster.
-        if (!old_config || !isSameConfiguration(new_config, *old_config, config_prefix + "." + key))
-            impl[key] = std::make_shared<Cluster>(new_config, settings, config_prefix, key);
+        if (!old_config || !isSameConfiguration(new_config, *old_config, config_prefix + "." + key))   {
+            /// One bad cluster must not prevent loading the rest of remote_servers.
+            try
+            {
+                impl[key] = std::make_shared<Cluster>(new_config, settings, config_prefix, key);
+            }
+            catch (...)
+            {
+                LOG_ERROR(
+                    getLogger("Clusters"),
+                    "Skipping invalid remote cluster {}",
+                    backQuoteIfNeed(key));
+                tryLogCurrentException(getLogger("Clusters"));
+                /// impl[key] before assignment inserts key -> nullptr if key was new; remove that stale entry.
+                /// If key already existed, it->second stays the old cluster (non-null) and we do not erase.
+                if (auto it = impl.find(key); it != impl.end() && !it->second)
+                    impl.erase(it);
+            }
+        }
     }
 }
 
@@ -456,105 +476,142 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
     for (const auto & key : config_keys)
     {
-        bool shard_with_replicas = startsWith(key, "shard");
-        bool shard_without_replicas = startsWith(key, "node");
+        /// Snapshot cluster invariants so we can undo partial updates for this XML shard/node on exception.
+        const size_t shards_before = shards_info.size();
+        const size_t addr_before = addresses_with_failover.size();
+        const size_t slots_before = slot_to_shard.size();
+        /// Filled only after a successful used_shard_names.insert; cleared from the set in catch if load fails later.
+        String shard_name_inserted_for_rollback;
 
-        if (!shard_with_replicas && !shard_without_replicas)
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);
-
-        const auto & prefix = config_prefix + key + ((shard_with_replicas) ? ".":  "");
-        const auto weight = config.getInt(prefix + ".weight", default_weight);
-        auto shard_name = use_shards_names ? config.getString(prefix + ".name") : "";
-        if (use_shards_names)
+        try
         {
-            if (shard_name.empty() || !used_shard_names.insert(shard_name).second)
-                throw Exception(ErrorCodes::INVALID_SHARD_ID, "Field shard_name is incorrect. It must be unique in cluster and non-empty");
-        }
+            bool shard_with_replicas = startsWith(key, "shard");
+            bool shard_without_replicas = startsWith(key, "node");
 
-        if (shard_without_replicas)
-        {
-            /// Shard without replicas.
-            Addresses addresses;
-            addresses.emplace_back(config, prefix, cluster_name, secret, current_shard_num, 1);
-            const auto & address = addresses.back();
+            if (!shard_with_replicas && !shard_without_replicas)
+                throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);
 
-            ShardInfo info;
-            info.shard_num = current_shard_num;
-            info.name = std::move(shard_name);
-            info.weight = weight;
-
-            if (address.is_local)
-                info.local_addresses.push_back(address);
-
-            auto pool = ConnectionPoolFactory::instance().get(
-                static_cast<unsigned>(settings[Setting::distributed_connections_pool_size]),
-                address.host_name,
-                address.port,
-                address.default_database,
-                address.user,
-                address.password,
-                address.proto_send_chunked,
-                address.proto_recv_chunked,
-                address.quota_key,
-                address.cluster,
-                address.cluster_secret,
-                "server",
-                address.compression,
-                address.secure,
-                address.bind_host,
-                address.priority);
-
-            info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings[Setting::load_balancing]);
-            info.per_replica_pools = {std::move(pool)};
-            info.default_database = address.default_database;
-
-            if (weight)
-                slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
-
-            shards_info.emplace_back(std::move(info));
-            addresses_with_failover.emplace_back(std::move(addresses));
-        }
-        else if (shard_with_replicas)
-        {
-            /// Shard with replicas.
-            Poco::Util::AbstractConfiguration::Keys replica_keys;
-            config.keys(config_prefix + key, replica_keys);
-
-            addresses_with_failover.emplace_back();
-            Addresses & replica_addresses = addresses_with_failover.back();
-            UInt32 current_replica_num = 1;
-
-            bool internal_replication = config.getBool(prefix + ".internal_replication", false);
-
-            for (const auto & replica_key : replica_keys)
+            const auto & prefix = config_prefix + key + ((shard_with_replicas) ? "." : "");
+            const auto weight = config.getInt(prefix + ".weight", default_weight);
+            auto shard_name = use_shards_names ? config.getString(prefix + ".name") : "";
+            if (use_shards_names)
             {
-                if (startsWith(replica_key, "weight") || startsWith(replica_key, "internal_replication") || startsWith(replica_key, "name"))
-                    continue;
-
-                if (startsWith(replica_key, "replica"))
-                {
-                    replica_addresses.emplace_back(config,
-                        prefix + replica_key,
-                        cluster_name,
-                        secret,
-                        current_shard_num,
-                        current_replica_num);
-                    ++current_replica_num;
-                }
-                else
-                    throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", replica_key);
+                if (shard_name.empty() || !used_shard_names.insert(shard_name).second)
+                    throw Exception(
+                        ErrorCodes::INVALID_SHARD_ID, "Field shard_name is incorrect. It must be unique in cluster and non-empty");
+                shard_name_inserted_for_rollback = shard_name;
             }
 
-            addShard(
-                settings,
-                replica_addresses,
-                /* treat_local_as_remote = */ false,
-                current_shard_num,
-                std::move(shard_name),
-                weight,
-                internal_replication);
+            if (shard_without_replicas)
+            {
+                /// Shard without replicas.
+                Addresses addresses;
+                addresses.emplace_back(config, prefix, cluster_name, secret, current_shard_num, 1);
+                const auto & address = addresses.back();
+
+                ShardInfo info;
+                info.shard_num = current_shard_num;
+                info.name = std::move(shard_name);
+                info.weight = weight;
+
+                if (address.is_local)
+                    info.local_addresses.push_back(address);
+
+                auto pool = ConnectionPoolFactory::instance().get(
+                    static_cast<unsigned>(settings[Setting::distributed_connections_pool_size]),
+                    address.host_name,
+                    address.port,
+                    address.default_database,
+                    address.user,
+                    address.password,
+                    address.proto_send_chunked,
+                    address.proto_recv_chunked,
+                    address.quota_key,
+                    address.cluster,
+                    address.cluster_secret,
+                    "server",
+                    address.compression,
+                    address.secure,
+                    address.bind_host,
+                    address.priority);
+
+                info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings[Setting::load_balancing]);
+                info.per_replica_pools = {std::move(pool)};
+                info.default_database = address.default_database;
+
+                if (weight)
+                    slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
+
+                shards_info.emplace_back(std::move(info));
+                addresses_with_failover.emplace_back(std::move(addresses));
+            }
+            else if (shard_with_replicas)
+            {
+                /// Shard with replicas.
+                Poco::Util::AbstractConfiguration::Keys replica_keys;
+                config.keys(config_prefix + key, replica_keys);
+
+                addresses_with_failover.emplace_back();
+                Addresses & replica_addresses = addresses_with_failover.back();
+                UInt32 current_replica_num = 1;
+
+                bool internal_replication = config.getBool(prefix + ".internal_replication", false);
+
+                ShardInfoInsertPathForInternalReplication insert_paths;
+                /// "_all_replicas" is a marker that will be replaced with all replicas
+                /// (for creating connections in the Distributed engine)
+                insert_paths.compact = fmt::format("shard{}_all_replicas", current_shard_num);
+
+                for (const auto & replica_key : replica_keys)
+                {
+                    if (startsWith(replica_key, "weight") || startsWith(replica_key, "internal_replication")
+                        || startsWith(replica_key, "name"))
+                        continue;
+
+                    if (startsWith(replica_key, "replica"))
+                    {
+                        replica_addresses.emplace_back(config, prefix + replica_key, cluster_name, secret, current_shard_num, current_replica_num);
+                        ++current_replica_num;
+
+                        if (internal_replication)
+                        {
+                            auto dir_name = replica_addresses.back().toFullString(/* use_compact_format= */ false);
+                            if (!replica_addresses.back().is_local)
+                                concatInsertPath(insert_paths.prefer_localhost_replica, dir_name);
+                            concatInsertPath(insert_paths.no_prefer_localhost_replica, dir_name);
+                        }
+                    }
+                    else
+                        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", replica_key);
+                }
+
+                addShard(
+                    settings,
+                    replica_addresses,
+                    /* treat_local_as_remote = */ false,
+                    current_shard_num,
+                    std::move(shard_name),
+                    weight,
+                    internal_replication);
+            }
+        }
+        catch (...)
+        {
+            /// Undo slot_to_shard.insert (node path) and weight slots inserted inside addShard.
+            slot_to_shard.resize(slots_before);
+            while (shards_info.size() > shards_before)
+                shards_info.pop_back();
+            while (addresses_with_failover.size() > addr_before)
+                addresses_with_failover.pop_back();
+            /// Without this, used_shard_names would still claim the name though the shard was not committed.
+            if (!shard_name_inserted_for_rollback.empty())
+                used_shard_names.erase(shard_name_inserted_for_rollback);
+
+            LOG_ERROR(getLogger("Cluster"), "Skipping shard {} in cluster {}", backQuoteIfNeed(key), backQuoteIfNeed(name));
+            tryLogCurrentException(getLogger("Cluster"));
         }
 
+        /// Always advance config position so shard_num matches the next XML child even if this one was skipped.
         ++current_shard_num;
     }
 
@@ -633,6 +690,11 @@ void Cluster::addShard(
     UInt32 weight,
     bool internal_replication)
 {
+    /// Explicit error instead of std::out_of_range from addresses.at(0) below; XML loader may catch and skip the shard.
+    if (addresses.empty())
+        throw Exception(
+            ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "Cannot add shard with no replica addresses (shard index {})", current_shard_num);
+
     Addresses shard_local_addresses;
 
     ConnectionPoolPtrs all_replicas_pools;
