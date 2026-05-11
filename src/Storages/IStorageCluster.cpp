@@ -118,18 +118,18 @@ void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate,  std::
 
     if (filter_actions_dag)
     {
-        predicate = query_info.filter_actions_dag->getOutputs().at(0);
+        predicate = filter_actions_dag->getOutputs().at(0);
         LOG_TRACE(
             log,
-            "[Notice] Using filter_actions_dag from SelectQueryInfo to pushdown filter for ReadFromCluster: {}",
-            query_info.filter_actions_dag.get()->dumpNames());
+            "[Notice] Using filter_actions_dag from ReadFromCluster to pushdown filter for ReadFromCluster: {}",
+            filter_actions_dag->dumpNames());
     }
     else if (query_info.filter_actions_dag)
     {
         LOG_TRACE(
             log,
-            "[Notice] Using filter_actions_dag from ReadFromCluster to pushdown filter for ReadFromCluster: {}",
-            query_info.filter_actions_dag.get()->dumpNames());
+            "[Notice] Using filter_actions_dag from SelectQueryInfo to pushdown filter for ReadFromCluster: {}",
+            query_info.filter_actions_dag->dumpNames());
     }
     else
         LOG_TRACE(log, "[Notice] No filter_actions_dag, cannot pushdown filter for ReadFromCluster.");
@@ -268,6 +268,11 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
 
     // Initialize extension with collected hosts
     createExtension(nullptr, std::move(ids_of_hosts));
+
+    if (!extension.has_value())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to create task iterator extension for ReadFromCluster");
+    }
 
     for (auto & connection : connections)
     {
