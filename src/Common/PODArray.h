@@ -148,7 +148,7 @@ protected:
 
         unprotect();
 
-        TAllocator::free(c_start - pad_left, allocated_bytes());
+        TAllocator::free(c_start - pad_left, allocated_bytes(), 0);
     }
 
     template <typename ... TAllocatorParams>

@@ -66,7 +66,7 @@ public:
         return arena->alignedRealloc(data, old_size, new_size, alignment);
     }
 
-    static void free(void * /*buf*/, size_t /*size*/)
+    static void free(void * /*buf*/, size_t /*size*/, size_t /*alignment*/)
     {
     }
 
@@ -107,7 +107,7 @@ public:
     void free(void * buf, size_t size)
     {
         if (size >= REAL_ALLOCATION_THRESHOLD)
-            TRealAllocator::free(buf, size);
+            TRealAllocator::free(buf, size, 0);
     }
 
 protected:

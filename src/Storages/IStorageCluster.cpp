@@ -236,6 +236,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
 
     std::vector<std::string> ids_of_hosts;
     std::vector<IConnectionPool::Entry> connections;
+    std::vector<ConnectionPoolWithFailoverPtr> pools;
 
     // First collect all available hosts
     for (const auto & shard_info : cluster->getShardsInfo())
@@ -258,6 +259,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             auto address = host + ":" + std::to_string(port);
             ids_of_hosts.emplace_back(address);
             connections.emplace_back(try_results.front());
+            pools.emplace_back(shard_info.pool);
         }
     }
 
@@ -274,11 +276,11 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to create task iterator extension for ReadFromCluster");
     }
 
-    for (auto & connection : connections)
+    for (size_t i = 0; i < connections.size(); ++i)
     {
         IConnections::ReplicaInfo replica_info{.number_of_current_replica = replica_index++};
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            std::vector<IConnectionPool::Entry>{connection},
+            std::vector<IConnectionPool::Entry>{connections[i]},
             query_to_send->formatWithSecretsOneLine(),
             getOutputHeader(),
             new_context,
@@ -287,7 +289,8 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             Tables(),
             processed_stage,
             nullptr,
-            RemoteQueryExecutor::Extension{.task_iterator = extension->task_iterator, .replica_info = std::move(replica_info)});
+            RemoteQueryExecutor::Extension{.task_iterator = extension->task_iterator, .replica_info = std::move(replica_info)},
+            pools[i]);
 
         remote_query_executor->setLogger(log);
         Pipe pipe{std::make_shared<RemoteSource>(

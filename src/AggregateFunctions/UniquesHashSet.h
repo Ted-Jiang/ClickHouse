@@ -100,7 +100,7 @@ private:
     {
         if (buf)
         {
-            Allocator::free(buf, buf_size() * sizeof(buf[0]));
+            Allocator::free(buf, buf_size() * sizeof(buf[0]), 0);
             buf = nullptr;
         }
     }

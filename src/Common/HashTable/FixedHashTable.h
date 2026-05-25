@@ -142,7 +142,7 @@ protected:
     {
         if (buf)
         {
-            Allocator::free(buf, getBufferSizeInBytes());
+            Allocator::free(buf, getBufferSizeInBytes(), 0);
             buf = nullptr;
         }
     }

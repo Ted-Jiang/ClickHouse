@@ -88,7 +88,7 @@ public:
     {
         if (size > max_fixed_block_size)
         {
-            Allocator<false>::free(ptr, size);
+            Allocator<false>::free(ptr, size, 0);
             return;
         }
 
