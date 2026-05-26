@@ -28,65 +28,78 @@ struct HDFSFileInfo
 {
     hdfsFileInfo * file_info;
     int length;
+    arrow::io::internal::LibHdfsShim* driver;
 
-    HDFSFileInfo() : file_info(nullptr) , length(0) {}
+    explicit HDFSFileInfo(arrow::io::internal::LibHdfsShim* d)
+        : file_info(nullptr)
+        , length(0)
+        , driver(d)
+    {
+    }
 
     HDFSFileInfo(const HDFSFileInfo & other) = delete;
-    HDFSFileInfo(HDFSFileInfo && other) = default;
-    HDFSFileInfo & operator=(const HDFSFileInfo & other) = delete;
-    HDFSFileInfo & operator=(HDFSFileInfo && other) = default;
-    ~HDFSFileInfo();
-};
 
-HDFSFileInfo::~HDFSFileInfo()
-{
-    hdfsFreeFileInfo(file_info, length);
-}
+    HDFSFileInfo(HDFSFileInfo && other) noexcept
+        : file_info(other.file_info)
+        , length(other.length)
+        , driver(other.driver)
+    {
+        other.file_info = nullptr;
+        other.length = 0;
+        other.driver = nullptr;
+    }
+
+    HDFSFileInfo & operator=(const HDFSFileInfo & other) = delete;
+
+    HDFSFileInfo & operator=(HDFSFileInfo && other) noexcept
+    {
+        if (this != &other)
+        {
+            /// Release current resources
+            if (file_info && driver)
+                driver->hdfsFreeFileInfo(file_info, length);
+
+            /// Move from other
+            file_info = other.file_info;
+            length = other.length;
+            driver = other.driver;
+
+            other.file_info = nullptr;
+            other.length = 0;
+            other.driver = nullptr;
+        }
+        return *this;
+    }
+
+    ~HDFSFileInfo()
+    {
+        if (file_info && driver)
+        {
+            driver->hdfsFreeFileInfo(file_info, length);
+        }
+    }
+};
 
 void JNIHDFSObjectStorage::initializeHDFSFS() const
 {
-    if (initialized)
-        return;
-
-    std::lock_guard lock(init_mutex);
-    if (initialized)
-        return;
-
-    createDriver();
-    initialized = true;
+    std::call_once(init_flag, [this]()
+    {
+        createDriver();
+        LOG_INFO(log, "HDFS filesystem initialized for {}", url);
+    });
 }
 
 void JNIHDFSObjectStorage::createDriver() const
 {
-    LOG_DEBUG(getLogger("JNIHDFSObjectStorage"), "url {}.", url);
-    LOG_DEBUG(getLogger("JNIHDFSObjectStorage"), "url_without_path {}.", url_without_path );
-    LOG_DEBUG(getLogger("JNIHDFSObjectStorage"), "data_directory {}.", data_directory);
+    LOG_TRACE(getLogger("JNIHDFSObjectStorage"), "Initializing HDFS connection: url={}, data_directory={}",
+        url, data_directory);
 
-    arrow::io::internal::LibHdfsShim* libhdfs_shim;
-    arrow::Status status = ::arrow::io::internal::ConnectLibHdfs(&libhdfs_shim);
-    if (!status.ok()) {
-        throw Exception(ErrorCodes::HDFS_ERROR, "Unable to create builder to connect to HDFS. {}", status.ToString());
-    }else {
-        LOG_DEBUG(getLogger("HDFSClient"), "Connect to HDFS successfully. {}", status.ToString());
-    }
+    auto connection = HDFSConnectionFactory::instance().createConnection();
 
-    hdfsBuilder* builder2 = libhdfs_shim->NewBuilder();
-    if (!builder2) {
-        throw Exception(ErrorCodes::HDFS_ERROR, "Failed to create HDFS builder.");
-    }
+    driver_ = connection.driver;
+    hdfs_fs = std::move(connection.fs);
 
-    // See https://github.com/facebookincubator/velox/blob/main/velox/external/hdfs/hdfs.h#L289
-    // If the string given is 'default', the default NameNode
-    // configuration will be used (from the XML configuration files)
-    libhdfs_shim->BuilderSetNameNode(builder2, "default");
-    libhdfs_shim->BuilderSetForceNewInstance(builder2);
-
-    hdfsFS hdfsClient = libhdfs_shim->BuilderConnect(builder2);
-    if (hdfsClient == nullptr) {
-        throw Exception(ErrorCodes::HDFS_ERROR, "Unable to create builder to connect to HDFS. {}", status.ToString());
-    }
-    driver_ = libhdfs_shim;
-    hdfs_fs = HDFSFSPtr(hdfsClient, detail::HDFSFsDeleter(libhdfs_shim));
+    LOG_INFO(getLogger("JNIHDFSObjectStorage"), "HDFS connection established for {}", url);
 }
 
 static constexpr std::string_view BAD_HDFS_URL_REGEXP = "^hdfs:/[^/]+/.*";
@@ -166,7 +179,15 @@ bool JNIHDFSObjectStorage::exists(const StoredObject & object) const
         path = path.substr(url_without_path.size());
 
     int res = driver_->Exists(hdfs_fs.get(), path.c_str());
-    return (0 == res);
+    if (res < 0)
+    {
+        throw Exception(
+            ErrorCodes::HDFS_ERROR,
+            "Failed to check existence of HDFS path: {}. Error: {}",
+            path,
+            getHDFSError(driver_, hdfs_fs.get()));
+    }
+    return (res == 0);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> JNIHDFSObjectStorage::readObject( /// NOLINT
@@ -224,20 +245,21 @@ ObjectMetadata JNIHDFSObjectStorage::getObjectMetadata(const std::string & path,
     {
         throw Exception(
             ErrorCodes::HDFS_ERROR,
-            "[HDFS] Cannot get file info for: {}. fix path: {}. Error details: {}",
+            "Cannot get file info for HDFS path: {} (fixed: {}). Error: {}",
             path,
             fix_path,
-            std::strerror(errno));
+            getHDFSError(driver_, hdfs_fs.get()));
     }
 
     ObjectMetadata metadata;
     metadata.size_bytes = static_cast<size_t>(file_info->mSize);
     metadata.last_modified = Poco::Timestamp::fromEpochTime(file_info->mLastMod);
-    // `etag` (entity tag) is typically used to identify a specific version of an object. It is commonly the MD5 hash of the object's content.
-    // Here change to file path + last modify time to make it unique.
+    /// `etag` (entity tag) is typically used to identify a specific version of an object.
+    /// It is commonly the MD5 hash of the object's content.
+    /// Here we use file path + last modify time to make it unique.
     metadata.etag = construct_the_etag(path, file_info->mLastMod);
 
-    hdfsFreeFileInfo(file_info, 1);
+    driver_->hdfsFreeFileInfo(file_info, 1);
     return metadata;
 }
 
@@ -270,11 +292,12 @@ std::optional<ObjectMetadata> JNIHDFSObjectStorage::tryGetObjectMetadata(const s
     ObjectMetadata metadata;
     metadata.size_bytes = static_cast<size_t>(file_info->mSize);
     metadata.last_modified = Poco::Timestamp::fromEpochTime(file_info->mLastMod);
-    // `etag` (entity tag) is typically used to identify a specific version of an object. It is commonly the MD5 hash of the object's content.
-    // Here change to file path + last modify time to make it unique.
+    /// `etag` (entity tag) is typically used to identify a specific version of an object.
+    /// It is commonly the MD5 hash of the object's content.
+    /// Here we use file path + last modify time to make it unique.
     metadata.etag = construct_the_etag(path, file_info->mLastMod);
 
-    hdfsFreeFileInfo(file_info, 1);
+    driver_->hdfsFreeFileInfo(file_info, 1);
     return metadata;
 }
 
@@ -285,13 +308,17 @@ void JNIHDFSObjectStorage::listObjects(const std::string & path, RelativePathsWi
     initializeHDFSFS();
     LOG_TEST(log, "Trying to list files for {}", path);
 
-    HDFSFileInfo ls;
+    HDFSFileInfo ls(driver_);
     ls.file_info = driver_->ListDirectory(hdfs_fs.get(), path.data(), &ls.length);
     if (ls.file_info == nullptr && errno != ENOENT) // NOLINT
     {
-        // ignore file not found exception, keep throw other exception,
-        // libhdfs3 doesn't have function to get exception type, so use errno.
-        throw Exception(ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}", path, std::strerror(errno));
+        /// Ignore file not found exception, keep throw other exception,
+        /// libhdfs3 doesn't have function to get exception type, so use errno.
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Cannot list directory {}: {}",
+            path,
+            getHDFSError(driver_, hdfs_fs.get()));
     }
 
     if (!ls.file_info && ls.length > 0)

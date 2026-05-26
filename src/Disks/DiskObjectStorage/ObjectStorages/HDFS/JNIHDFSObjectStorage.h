@@ -3,14 +3,10 @@
 //
 #pragma once
 
-#include <Common/re2.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/HDFS/HDFSObjectStorage.h>
-
-#include <IO/copyData.h>
-
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+#include <Storages/ObjectStorage/HDFS/HDFSConnectionFactory.h>
 
 #include <Poco/DateTimeFormatter.h>
 #include <Poco/Timestamp.h>
@@ -32,24 +28,6 @@ struct HDFSObjectStorageSettings
     int replication;
 };
 
-namespace detail
-{
-struct HDFSFsDeleter
-{
-    arrow::io::internal::LibHdfsShim* driver_;
-
-    HDFSFsDeleter(arrow::io::internal::LibHdfsShim* driver)
-        : driver_(driver) {}
-
-    void operator()(hdfsFS fs_ptr)
-    {
-        driver_->hdfsDisconnect(fs_ptr);
-        LOG_DEBUG(getLogger("HDFSClient"), "driver_->hdfsDisconnect done.");
-    }
-};
-}
-
-using HDFSFSPtr = std::unique_ptr<std::remove_pointer_t<hdfsFS>, detail::HDFSFsDeleter>;
 
 class JNIHDFSObjectStorage : public IObjectStorage
 {
@@ -63,8 +41,6 @@ public:
         const Poco::Util::AbstractConfiguration & config_,
         bool lazy_initialize)
         : config(config_)
-        , driver_(nullptr)
-        , hdfs_fs(nullptr, detail::HDFSFsDeleter(driver_))
         , settings(std::move(settings_))
         , log(getLogger("JNIHDFSObjectStorage(" + hdfs_root_path_ + ")"))
     {
@@ -161,10 +137,10 @@ private:
     const Poco::Util::AbstractConfiguration & config;
 
     mutable arrow::io::internal::LibHdfsShim* driver_;
+    /// Notice hdfs_fs should deconstruct before driver_
     mutable HDFSFSPtr hdfs_fs;
 
-    mutable std::mutex init_mutex;
-    mutable std::atomic_bool initialized{false};
+    mutable std::once_flag init_flag;
 
     SettingsPtr settings;
     std::string url;
