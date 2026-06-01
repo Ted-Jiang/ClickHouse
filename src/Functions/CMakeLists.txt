@@ -210,6 +210,13 @@ set(dbms_headers "${dbms_headers}" PARENT_SCOPE)
 
 target_link_libraries(clickhouse_functions_obj PUBLIC ${PUBLIC_LIBS} PRIVATE ${PRIVATE_LIBS})
 
+# Add compile definition for serverConstants.cpp to use current git hash
+if(CURRENT_GIT_HASH)
+    set_source_files_properties(serverConstants.cpp
+        PROPERTIES COMPILE_DEFINITIONS "RUNTIME_GIT_HASH=\"${CURRENT_GIT_HASH}\""
+    )
+endif()
+
 # Used to forward the linking information to the final binaries such as clickhouse / unit_tests_dbms,
 # since such information are lost after we convert to OBJECT target
 add_library(clickhouse_functions INTERFACE)

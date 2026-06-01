@@ -30,7 +30,7 @@ public:
         return arena->realloc(data, old_size, new_size);
     }
 
-    static void free(void * /*buf*/, size_t /*size*/)
+    static void free(void * /*buf*/, size_t /*size*/, size_t /*alignment*/ = 0)
     {
         // Do nothing, trash in arena remains.
     }
@@ -104,7 +104,7 @@ public:
         return new_buf;
     }
 
-    void free(void * buf, size_t size)
+    void free(void * buf, size_t size, size_t /*alignment*/)
     {
         if (size >= REAL_ALLOCATION_THRESHOLD)
             TRealAllocator::free(buf, size, 0);

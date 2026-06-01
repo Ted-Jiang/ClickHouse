@@ -106,7 +106,18 @@ namespace
     public:
         static constexpr auto name = "version";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionVersion>(context); }
-        explicit FunctionVersion(ContextPtr context) : FunctionServerConstantBase(VERSION_STRING, context->isDistributed()) {}
+        explicit FunctionVersion(ContextPtr context)
+            : FunctionServerConstantBase(
+                []() -> String {
+#ifdef RUNTIME_GIT_HASH
+                    String git_hash = RUNTIME_GIT_HASH;
+#else
+                    String git_hash = VERSION_GITHASH;
+#endif
+                    return String(VERSION_STRING) + " (git: " + git_hash.substr(0, 8) + ")";
+                }(),
+                context->isDistributed())
+        {}
     };
 
     /// revision() - returns the current revision.
