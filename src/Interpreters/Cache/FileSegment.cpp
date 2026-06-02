@@ -148,7 +148,7 @@ void FileSegment::setDownloadState(State state, const FileSegmentGuard::Lock & l
             stateToString(state), getInfoForLogUnlocked(lock));
     }
 
-    LOG_TEST(log, "Updated state from {} to {}", stateToString(download_state), stateToString(state));
+    LOG_TRACE(log, "Updated state from {} to {} ->{}", stateToString(download_state), stateToString(state), file_key.toString());
     download_state = state;
 }
 

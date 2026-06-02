@@ -53,9 +53,13 @@ public:
 
     String getFileName() const override;
 
+    bool supportsRightBoundedReads() const override { return true; }
+
     size_t readBigAt(char * buffer, size_t size, size_t offset, const std::function<bool(size_t)> & function) const override;
 
     bool supportsReadAt() override;
+
+    void setReadUntilPosition(size_t size) override;
 
 private:
     std::unique_ptr<JNIReadBufferFromHDFSImpl> impl;

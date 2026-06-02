@@ -122,6 +122,9 @@ struct JNIReadBufferFromHDFS::JNIReadBufferFromHDFSImpl : public BufferWithOwnMe
         return file_size;
     }
 
+    off_t getReadUntilPosition() const { return read_until_position; }
+    off_t getFileOffset() const { return file_offset; }
+
     bool nextImpl() override
     {
         size_t num_bytes_to_read;
@@ -146,27 +149,67 @@ struct JNIReadBufferFromHDFS::JNIReadBufferFromHDFSImpl : public BufferWithOwnMe
             return false;
         }
 
-        ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, num_bytes_to_read);
-        int bytes_read = driver_->hdfsRead(fs.get(), file_handle->get(), internal_buffer.begin(), safe_cast<int>(num_bytes_to_read));
-        rlock.unlock(std::max(0, bytes_read));
+        /// Loop to fill the buffer as much as possible, similar to ReadBufferFromIStream.
+        /// This reduces the number of JNI calls and improves performance.
+        size_t total_bytes_read = 0;
+        char * read_to = internal_buffer.begin();
 
-        if (bytes_read < 0)
+        while (total_bytes_read < num_bytes_to_read)
         {
-            throw Exception(
-                ErrorCodes::HDFS_ERROR,
-                "Failed to read from HDFS file: {} (URI: {}). Error: {}",
-                hdfs_file_path,
-                hdfs_uri,
-                getHDFSError(driver_, fs.get()));
+            /// Check boundaries on each iteration to respect read_until_position and file_size
+            size_t bytes_remaining = num_bytes_to_read - total_bytes_read;
+
+            /// Calculate current position for pread
+            off_t current_offset = file_offset + total_bytes_read;
+
+            /// Re-check read_until_position limit on each iteration
+            if (read_until_position)
+            {
+                if (current_offset >= read_until_position)
+                {
+                    LOG_TRACE(getLogger("HDFSClient"), "[DEBUG] Reached read_until_position {} (current offset: {})", read_until_position, current_offset);
+                    break;
+                }
+                bytes_remaining = std::min<size_t>(bytes_remaining, read_until_position - current_offset);
+            }
+
+            /// Re-check file_size limit on each iteration
+            if (file_size != 0)
+            {
+                if (current_offset >= file_size)
+                {
+                    LOG_TRACE(getLogger("HDFSClient"), "[DEBUG] Reached file_size {} (current offset: {})", file_size, current_offset);
+                    break;
+                }
+                bytes_remaining = std::min<size_t>(bytes_remaining, file_size - current_offset);
+            }
+
+            size_t bytes_read = pread(read_to, bytes_remaining, current_offset);
+
+            if (bytes_read == 0)
+            {
+                LOG_TRACE(getLogger("HDFSClient"), "[DEBUG] Reached EOF for HDFS file: {} (URI: {})", hdfs_file_path, hdfs_uri);
+                break; /// EOF reached
+            }
+
+            total_bytes_read += bytes_read;
+            read_to += bytes_read;
         }
 
-        if (bytes_read)
+        LOG_TRACE(
+            getLogger("HDFSClient"),
+            "[DEBUG] Success {} from HDFS total_bytes_read {} / {}",
+            "Pread",
+            total_bytes_read,
+            num_bytes_to_read);
+
+        if (total_bytes_read)
         {
             working_buffer = internal_buffer;
-            working_buffer.resize(bytes_read);
-            file_offset += bytes_read;
+            working_buffer.resize(total_bytes_read);
+            file_offset += total_bytes_read;
             if (read_settings.remote_throttler)
-                read_settings.remote_throttler->throttle(bytes_read);
+                read_settings.remote_throttler->throttle(total_bytes_read);
 
             return true;
         }
@@ -250,7 +293,32 @@ bool JNIReadBufferFromHDFS::nextImpl()
 {
     if (use_external_buffer)
     {
-        impl->set(internal_buffer.begin(), internal_buffer.size());
+           /**
+            * use_external_buffer -- means we read into the buffer which
+            * was passed to us from somewhere else. We do not check whether
+            * previously returned buffer was read or not (no hasPendingData() check is needed),
+            * because this branch means we are prefetching data,
+            * each nextImpl() call we can fill a different buffer.
+            */
+        size_t buffer_size = internal_buffer.size();
+
+        /// Limit buffer size by read_until_position to avoid reading beyond the requested range
+        auto read_until_position = impl->getReadUntilPosition();
+        if (read_until_position)
+        {
+            auto file_offset = impl->getFileOffset();
+            if (read_until_position > file_offset)
+            {
+                size_t max_bytes_to_read = read_until_position - file_offset;
+                buffer_size = std::min(buffer_size, max_bytes_to_read);
+            }
+            else
+            {
+                buffer_size = 0;
+            }
+        }
+
+        impl->set(internal_buffer.begin(), buffer_size);
         assert(working_buffer.begin() != nullptr);
         assert(!internal_buffer.empty());
     }
@@ -317,6 +385,17 @@ size_t JNIReadBufferFromHDFS::readBigAt(char * buffer, size_t size, size_t offse
 bool JNIReadBufferFromHDFS::supportsReadAt()
 {
     return impl->enable_pread;
+}
+
+void JNIReadBufferFromHDFS::setReadUntilPosition(size_t position)
+{
+    if (impl)
+    {
+        if (position != static_cast<size_t>(impl->read_until_position))
+        {
+            impl->read_until_position = position;
+        }
+    }
 }
 
 }
