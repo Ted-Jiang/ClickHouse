@@ -14,23 +14,6 @@ include (configure_config.cmake)
 configure_file (Common/config.h.in ${CONFIG_INCLUDE_PATH}/config.h)
 configure_file (Common/config_version.cpp.in ${CONFIG_INCLUDE_PATH}/config_version.cpp)
 
-# Get current git hash at configure time
-execute_process(
-    COMMAND git rev-parse HEAD
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    OUTPUT_VARIABLE CURRENT_GIT_HASH
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET
-)
-
-# Set compile definition for serverConstants.cpp with current git hash
-if(CURRENT_GIT_HASH)
-    message(STATUS "Current git hash: ${CURRENT_GIT_HASH}")
-else()
-    set(CURRENT_GIT_HASH ${VERSION_GITHASH})
-    message(STATUS "Using VERSION_GITHASH: ${CURRENT_GIT_HASH}")
-endif()
-
 # ClickHouse developers may use platform-dependent code under some macro (e.g. `#ifdef ENABLE_MULTITARGET`).
 # If turned ON, this option defines such macro.
 # See `src/Common/TargetSpecific.h`

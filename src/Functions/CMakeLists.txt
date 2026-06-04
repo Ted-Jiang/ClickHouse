@@ -211,9 +211,10 @@ set(dbms_headers "${dbms_headers}" PARENT_SCOPE)
 target_link_libraries(clickhouse_functions_obj PUBLIC ${PUBLIC_LIBS} PRIVATE ${PRIVATE_LIBS})
 
 # Add compile definition for serverConstants.cpp to use current git hash
-if(CURRENT_GIT_HASH)
+if(GIT_HASH)
+    message(STATUS "Found serverConstants Git hash: ${GIT_HASH}")
     set_source_files_properties(serverConstants.cpp
-        PROPERTIES COMPILE_DEFINITIONS "RUNTIME_GIT_HASH=\"${CURRENT_GIT_HASH}\""
+        PROPERTIES COMPILE_DEFINITIONS "RUNTIME_GIT_HASH=\"${GIT_HASH}\""
     )
 endif()
 

@@ -33,6 +33,8 @@ if (Git_FOUND)
 
   message(STATUS "Git HEAD commit hash: ${GIT_HASH}")
 
+  set(GIT_HASH "${GIT_HASH}" CACHE INTERNAL "Git commit hash")
+
   execute_process(
     COMMAND ${GIT_EXECUTABLE} status
     WORKING_DIRECTORY ${PROJECT_SOURCE_DIR} OUTPUT_STRIP_TRAILING_WHITESPACE)
