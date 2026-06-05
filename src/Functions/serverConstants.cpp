@@ -18,6 +18,8 @@
 #include <Common/config_version.h>
 
 
+extern const char * GIT_HASH;
+
 namespace DB
 {
 namespace
@@ -109,12 +111,7 @@ namespace
         explicit FunctionVersion(ContextPtr context)
             : FunctionServerConstantBase(
                 []() -> String {
-#ifdef RUNTIME_GIT_HASH
-                    String git_hash = RUNTIME_GIT_HASH;
-#else
-                    String git_hash = VERSION_GITHASH;
-#endif
-                    return String(VERSION_STRING) + " (git: " + git_hash.substr(0, 8) + ")";
+                    return String(VERSION_STRING) + " (git: " + String(GIT_HASH).substr(0, 8) + ")";
                 }(),
                 context->isDistributed())
         {}

@@ -4,8 +4,6 @@ if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
 
-configure_file(GitHash.cpp.in GitHash.generated.cpp)
-
 set (SRCS
     argsToConfig.cpp
     cgroupsv2.cpp
