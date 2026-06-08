@@ -10,8 +10,20 @@
 
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Storages/ObjectStorage/HDFS/JNIReadBufferFromHDFS.h>
+#include <Common/ProfileEvents.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+
+namespace ProfileEvents
+{
+extern const Event HDFSExists;
+extern const Event HDFSExistsErrors;
+extern const Event HDFSGetPathInfo;
+extern const Event HDFSGetPathInfoErrors;
+extern const Event HDFSGetPathInfoMisses;
+extern const Event HDFSListDirectory;
+extern const Event HDFSListDirectoryErrors;
+}
 
 namespace DB
 {
@@ -178,9 +190,12 @@ bool JNIHDFSObjectStorage::exists(const StoredObject & object) const
     if (path.starts_with(url_without_path))
         path = path.substr(url_without_path.size());
 
+    ProfileEvents::increment(ProfileEvents::HDFSExists);
     int res = driver_->Exists(hdfs_fs.get(), path.c_str());
     if (res < 0)
     {
+        ProfileEvents::increment(ProfileEvents::HDFSExistsErrors);
+        HDFSConnectionFactory::instance().handleError(__PRETTY_FUNCTION__);
         throw Exception(
             ErrorCodes::HDFS_ERROR,
             "Failed to check existence of HDFS path: {}. Error: {}",
@@ -239,10 +254,13 @@ ObjectMetadata JNIHDFSObjectStorage::getObjectMetadata(const std::string & path,
     }
 
     auto fix_path = fixObjectKeyFromURL(path);
+    ProfileEvents::increment(ProfileEvents::HDFSGetPathInfo);
     auto *file_info = driver_->GetPathInfo(hdfs_fs.get(), fix_path.data());
 
     if (!file_info)
     {
+        ProfileEvents::increment(ProfileEvents::HDFSGetPathInfoErrors);
+        HDFSConnectionFactory::instance().handleError(__PRETTY_FUNCTION__);
         throw Exception(
             ErrorCodes::HDFS_ERROR,
             "Cannot get file info for HDFS path: {} (fixed: {}). Error: {}",
@@ -282,10 +300,12 @@ std::optional<ObjectMetadata> JNIHDFSObjectStorage::tryGetObjectMetadata(const s
     }
 
     auto fix_path = fixObjectKeyFromURL(path);
+    ProfileEvents::increment(ProfileEvents::HDFSGetPathInfo);
     auto *file_info = driver_->GetPathInfo(hdfs_fs.get(), fix_path.data());
 
     if (!file_info)
     {
+        ProfileEvents::increment(ProfileEvents::HDFSGetPathInfoMisses);
         return std::nullopt;
     }
 
@@ -309,9 +329,11 @@ void JNIHDFSObjectStorage::listObjects(const std::string & path, RelativePathsWi
     LOG_TEST(log, "Trying to list files for {}", path);
 
     HDFSFileInfo ls(driver_);
+    ProfileEvents::increment(ProfileEvents::HDFSListDirectory);
     ls.file_info = driver_->ListDirectory(hdfs_fs.get(), path.data(), &ls.length);
     if (ls.file_info == nullptr && errno != ENOENT) // NOLINT
     {
+        ProfileEvents::increment(ProfileEvents::HDFSListDirectoryErrors);
         /// Ignore file not found exception, keep throw other exception,
         /// libhdfs3 doesn't have function to get exception type, so use errno.
         throw Exception(

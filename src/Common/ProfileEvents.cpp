@@ -725,6 +725,25 @@ The server successfully detected this situation and will download merged part fr
     \
     M(S3Clients, "Number of created S3 clients.", ValueType::Number) \
     M(TinyS3Clients, "Number of S3 clients copies which reuse an existing auth provider from another client.", ValueType::Number) \
+    M(HDFSConnectionsCreated, "Number of HDFS filesystem connections created by the shared connection factory.", ValueType::Number) \
+    M(HDFSConnectionsReused, "Number of times the HDFS shared connection factory reused an existing connection.", ValueType::Number) \
+    M(HDFSConnectionErrors, "Number of HDFS errors reported to the shared connection factory.", ValueType::Number) \
+    M(HDFSConnectionFailures, "Number of HDFS EIO errors that marked the current shared connection as failed.", ValueType::Number) \
+    M(HDFSConnectionStaleFailures, "Number of HDFS EIO errors from stale connections that did not mark the current shared connection as failed.", ValueType::Number) \
+    M(HDFSOpenFile, "Number of HDFS OpenFile calls.", ValueType::Number) \
+    M(HDFSOpenFileErrors, "Number of failed HDFS OpenFile calls.", ValueType::Number) \
+    M(HDFSGetPathInfo, "Number of HDFS GetPathInfo calls.", ValueType::Number) \
+    M(HDFSGetPathInfoErrors, "Number of failed HDFS GetPathInfo calls.", ValueType::Number) \
+    M(HDFSGetPathInfoMisses, "Number of HDFS GetPathInfo calls that did not return file info without throwing an exception.", ValueType::Number) \
+    M(HDFSListDirectory, "Number of HDFS ListDirectory calls.", ValueType::Number) \
+    M(HDFSListDirectoryErrors, "Number of failed HDFS ListDirectory calls.", ValueType::Number) \
+    M(HDFSExists, "Number of HDFS Exists calls.", ValueType::Number) \
+    M(HDFSExistsErrors, "Number of failed HDFS Exists calls.", ValueType::Number) \
+    M(HDFSPread, "Number of HDFS Pread calls.", ValueType::Number) \
+    M(HDFSPreadErrors, "Number of failed HDFS Pread calls.", ValueType::Number) \
+    M(HDFSPreadBytes, "Number of bytes read by HDFS Pread calls.", ValueType::Bytes) \
+    M(HDFSSeek, "Number of HDFS seek calls.", ValueType::Number) \
+    M(HDFSSeekErrors, "Number of failed HDFS seek calls.", ValueType::Number) \
     \
     M(EngineFileLikeReadFiles, "Number of files read in table engines working with files (like File/S3/URL/HDFS).", ValueType::Number) \
     \

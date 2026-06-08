@@ -5,6 +5,7 @@
 #include "HDFSConnectionFactory.h"
 #include "HDFSFileHandle.h"
 
+#include <Common/ProfileEvents.h>
 #include <Common/Scheduler/ResourceGuard.h>
 #include <IO/Progress.h>
 #include <Common/Throttler.h>
@@ -17,6 +18,15 @@ namespace ProfileEvents
 {
 extern const Event RemoteReadThrottlerBytes;
 extern const Event RemoteReadThrottlerSleepMicroseconds;
+extern const Event HDFSOpenFile;
+extern const Event HDFSOpenFileErrors;
+extern const Event HDFSGetPathInfo;
+extern const Event HDFSGetPathInfoErrors;
+extern const Event HDFSPread;
+extern const Event HDFSPreadErrors;
+extern const Event HDFSPreadBytes;
+extern const Event HDFSSeek;
+extern const Event HDFSSeekErrors;
 }
 
 namespace DB
@@ -79,10 +89,13 @@ struct JNIReadBufferFromHDFS::JNIReadBufferFromHDFSImpl : public BufferWithOwnMe
 
         /// Open file with RAII wrapper
         LOG_TRACE(getLogger("JNIReadBufferFromHDFSImpl"), "Opening HDFS file: {}", hdfs_file_path);
+        ProfileEvents::increment(ProfileEvents::HDFSOpenFile);
         hdfsFile fin = driver_->OpenFile(fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
 
         if (fin == nullptr)
         {
+            ProfileEvents::increment(ProfileEvents::HDFSOpenFileErrors);
+            HDFSConnectionFactory::instance().handleError(__PRETTY_FUNCTION__);
             throw Exception(
                 ErrorCodes::CANNOT_OPEN_FILE,
                 "Unable to open HDFS file: {}. Error: {}",
@@ -100,9 +113,12 @@ struct JNIReadBufferFromHDFS::JNIReadBufferFromHDFSImpl : public BufferWithOwnMe
         }
         else
         {
+            ProfileEvents::increment(ProfileEvents::HDFSGetPathInfo);
             auto * file_info = driver_->GetPathInfo(fs.get(), hdfs_file_path.c_str());
             if (!file_info)
             {
+                ProfileEvents::increment(ProfileEvents::HDFSGetPathInfoErrors);
+                HDFSConnectionFactory::instance().handleError(__PRETTY_FUNCTION__);
                 throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE,
                     "Cannot find out file size for: {}. Error: {}",
                     hdfs_file_path,
@@ -222,9 +238,12 @@ struct JNIReadBufferFromHDFS::JNIReadBufferFromHDFSImpl : public BufferWithOwnMe
         if (whence != SEEK_SET)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Only SEEK_SET is supported");
 
+        ProfileEvents::increment(ProfileEvents::HDFSSeek);
         int seek_status = driver_->hdfsSeek(fs.get(), file_handle->get(), file_offset_);
         if (seek_status != 0)
         {
+            ProfileEvents::increment(ProfileEvents::HDFSSeekErrors);
+            HDFSConnectionFactory::instance().handleError(__PRETTY_FUNCTION__);
             throw Exception(
                 ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
                 "Failed to seek HDFS file: {} to offset: {}. Error: {}",
@@ -245,11 +264,14 @@ struct JNIReadBufferFromHDFS::JNIReadBufferFromHDFSImpl : public BufferWithOwnMe
     size_t pread(char * buffer, size_t size, size_t offset)
     {
         ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, size);
+        ProfileEvents::increment(ProfileEvents::HDFSPread);
         auto bytes_read = driver_->Pread(fs.get(), file_handle->get(), offset, buffer, safe_cast<int>(size));
         rlock.unlock(std::max(0, bytes_read));
 
         if (bytes_read < 0)
         {
+            ProfileEvents::increment(ProfileEvents::HDFSPreadErrors);
+            HDFSConnectionFactory::instance().handleError(__PRETTY_FUNCTION__);
             throw Exception(
                 ErrorCodes::HDFS_ERROR,
                 "Failed to pread from HDFS file: {} at offset: {} (URI: {}). Error: {}",
@@ -262,6 +284,7 @@ struct JNIReadBufferFromHDFS::JNIReadBufferFromHDFSImpl : public BufferWithOwnMe
         {
             read_settings.remote_throttler->throttle(bytes_read);
         }
+        ProfileEvents::increment(ProfileEvents::HDFSPreadBytes, static_cast<ProfileEvents::Count>(bytes_read));
         return bytes_read;
     }
 };
@@ -399,4 +422,3 @@ void JNIReadBufferFromHDFS::setReadUntilPosition(size_t position)
 }
 
 }
-

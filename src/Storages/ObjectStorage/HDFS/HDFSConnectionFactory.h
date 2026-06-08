@@ -8,12 +8,22 @@
 #include "arrow/io/hdfs.h"
 
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <cerrno>
+#include <cstring>
 #include <memory>
 #include <string>
 
+
+namespace ProfileEvents
+{
+    extern const Event HDFSConnectionsCreated;
+    extern const Event HDFSConnectionsReused;
+    extern const Event HDFSConnectionErrors;
+}
 
 namespace DB
 {
@@ -23,35 +33,8 @@ namespace ErrorCodes
     extern const int HDFS_ERROR;
 }
 
-/// RAII wrapper for HDFS filesystem handle
-namespace detail
-{
 
-struct HDFSFsDeleter
-{
-    arrow::io::internal::LibHdfsShim* driver_;
-
-    /// Default constructor for uninitialized state
-    HDFSFsDeleter() : driver_(nullptr) {}
-
-    explicit HDFSFsDeleter(arrow::io::internal::LibHdfsShim* driver)
-        : driver_(driver)
-    {
-    }
-
-    void operator()(hdfsFS fs_ptr)
-    {
-        if (fs_ptr && driver_)
-        {
-            driver_->hdfsDisconnect(fs_ptr);
-            LOG_TRACE(getLogger("HDFSClient"), "HDFS connection closed");
-        }
-    }
-};
-
-}
-
-using HDFSFSPtr = std::unique_ptr<std::remove_pointer_t<hdfsFS>, detail::HDFSFsDeleter>;
+using HDFSFSPtr = std::shared_ptr<std::remove_pointer_t<hdfsFS>>;
 
 /// Helper function to get HDFS error message
 inline std::string getHDFSError(arrow::io::internal::LibHdfsShim* driver, hdfsFS fs)
@@ -92,35 +75,20 @@ public:
         return factory;
     }
 
-    /// Create HDFS connection with given configuration
-    Connection createConnection() const
+    /// Returns the singleton HDFS connection initialized once at startup.
+    /// Thread-safe: shared_ptr copy is safe without a lock after construction.
+    Connection createConnection()
     {
-        chassert(driver_ != nullptr);
-        hdfsBuilder* builder = driver_->NewBuilder();
-        if (!builder)
-        {
-            throw Exception(ErrorCodes::HDFS_ERROR, "Failed to create HDFS builder");
-        }
+        ProfileEvents::increment(ProfileEvents::HDFSConnectionsReused);
+        return Connection{driver_, shared_connection_};
+    }
 
-        /// Configure NameNode
-        /// See https://github.com/facebookincubator/velox/blob/main/velox/external/hdfs/hdfs.h#L289
-        // If the string given is 'default', the default NameNode
-        // configuration will be used (from the XML configuration files)
-        driver_->BuilderSetNameNode(builder, "default");
-        driver_->BuilderSetForceNewInstance(builder);
-
-        /// Connect to HDFS
-        hdfsFS hdfsClient = driver_->BuilderConnect(builder);
-
-        if (hdfsClient == nullptr)
-        {
-            throw Exception(ErrorCodes::HDFS_ERROR, "Unable to connect to HDFS cluster with NameNode!");
-        }
-
-        LOG_INFO(getLogger("HDFSClient"), "Successfully connected to HDFS NameNode.");
-        Connection conn {driver_, HDFSFSPtr(hdfsClient, detail::HDFSFsDeleter(driver_))};
-
-        return conn;
+    void handleError(const String & underlying_err_str)
+    {
+        const int error_code = errno;
+        const char * error_message = std::strerror(error_code);
+        ProfileEvents::increment(ProfileEvents::HDFSConnectionErrors);
+        LOG_ERROR(getLogger("HDFSClient"), "HDFS error in {}: {}.", underlying_err_str, error_message);
     }
 
     /// Delete copy constructor and assignment operator
@@ -128,9 +96,14 @@ public:
     HDFSConnectionFactory & operator=(const HDFSConnectionFactory &) = delete;
 
 private:
+    // Pointer used as a singleton handle to dynamically loaded HDFS symbols.
     arrow::io::internal::LibHdfsShim* driver_;
+    // From https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-common/filesystem/filesystem.html
+    // the static FileSystem.get() may return a pre-existing instance shared across threads.
+    // We rely on that: one connection is created at startup and reused for the process lifetime.
+    HDFSFSPtr shared_connection_;
 
-    /// Private constructor for singleton
+    /// Private constructor for Singleton - initializes both the driver and the HDFS connection eagerly.
     HDFSConnectionFactory()
     {
         arrow::Status status = ::arrow::io::internal::ConnectLibHdfs(&driver_);
@@ -142,11 +115,60 @@ private:
                 "Unable to connect to HDFS library: {}",
                 status.ToString());
         }
-        LOG_INFO(getLogger("[HDFSConnectionFactory]"), "HDFS library driver initialized successfully");
+        LOG_INFO(getLogger("HDFSConnectionFactory"), "HDFS library driver initialized successfully");
+
+        shared_connection_ = createNewConnection();
+        ProfileEvents::increment(ProfileEvents::HDFSConnectionsCreated);
+        LOG_INFO(getLogger("HDFSConnectionFactory"), "HDFS connection initialized for process lifetime");
     }
 
     /// Destructor
-    ~HDFSConnectionFactory() = default;
+    ~HDFSConnectionFactory()
+    {
+        shared_connection_.reset();
+        LOG_DEBUG(getLogger("HDFSConnectionFactory"), "HDFS connection factory destroyed");
+    }
+
+    /// Create a new HDFS connection
+    HDFSFSPtr createNewConnection()
+    {
+        chassert(driver_ != nullptr);
+        hdfsBuilder* builder = driver_->NewBuilder();
+        if (!builder)
+        {
+            throw Exception(ErrorCodes::HDFS_ERROR, "Failed to create HDFS builder");
+        }
+
+        /// Configure NameNode
+        /// See https://github.com/facebookincubator/velox/blob/main/velox/external/hdfs/hdfs.h#L289
+        /// If the string given is 'default', the default NameNode
+        /// configuration will be used (from the XML configuration files)
+        driver_->BuilderSetNameNode(builder, "default");
+        driver_->BuilderSetForceNewInstance(builder);
+
+        /// Connect to HDFS
+        hdfsFS hdfsClient = driver_->BuilderConnect(builder);
+
+        if (hdfsClient == nullptr)
+        {
+            throw Exception(ErrorCodes::HDFS_ERROR, "Unable to connect to HDFS cluster with NameNode!");
+        }
+
+        LOG_INFO(getLogger("HDFSClient"), "Successfully created new HDFS connection");
+
+        /// Use shared_ptr with custom deleter for connection sharing
+        HDFSFSPtr fs_ptr(hdfsClient, [driver = driver_](hdfsFS fs)
+        {
+            if (fs && driver)
+            {
+                driver->hdfsDisconnect(fs);
+                LOG_WARNING(getLogger("HDFSClient"), "HDFS connection closed");
+            }
+        });
+
+        return fs_ptr;
+    }
+
 };
 
 }
