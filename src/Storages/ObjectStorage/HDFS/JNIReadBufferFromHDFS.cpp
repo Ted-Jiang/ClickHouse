@@ -7,10 +7,8 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/Scheduler/ResourceGuard.h>
-#include <IO/Progress.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
-#include <mutex>
 
 
 
@@ -80,9 +78,10 @@ struct JNIReadBufferFromHDFS::JNIReadBufferFromHDFSImpl : public BufferWithOwnMe
         , read_until_position(read_until_position_)
         , enable_pread(read_settings_.enable_hdfs_pread)
     {
-        /// Create HDFS connection using factory
-        LOG_TRACE(getLogger("JNIReadBufferFromHDFSImpl"), "Creating HDFS connection for file: {}", hdfs_file_path);
-        auto connection = HDFSConnectionFactory::instance().createConnection();
+        /// Create HDFS connection using factory - one connection per namenode.
+        /// Extract the scheme+authority from hdfs_uri (e.g. "viewfs://cluster" or "hdfs://nn:8020").
+        LOG_TRACE(getLogger("JNIReadBufferFromHDFSImpl"), "Creating HDFS connection for file: {}, {}", hdfs_file_path, hdfs_uri);
+        auto connection = HDFSConnectionFactory::instance().getConnection(hdfs_uri);
 
         driver_ = connection.driver;
         fs = std::move(connection.fs);
@@ -99,7 +98,7 @@ struct JNIReadBufferFromHDFS::JNIReadBufferFromHDFSImpl : public BufferWithOwnMe
             throw Exception(
                 ErrorCodes::CANNOT_OPEN_FILE,
                 "Unable to open HDFS file: {}. Error: {}",
-                hdfs_uri + hdfs_file_path,
+                hdfs_file_path,
                 getHDFSError(driver_, fs.get()));
         }
 

@@ -728,7 +728,6 @@ The server successfully detected this situation and will download merged part fr
     M(HDFSConnectionsCreated, "Number of HDFS filesystem connections created by the shared connection factory.", ValueType::Number) \
     M(HDFSConnectionsReused, "Number of times the HDFS shared connection factory reused an existing connection.", ValueType::Number) \
     M(HDFSConnectionErrors, "Number of HDFS errors reported to the shared connection factory.", ValueType::Number) \
-    M(HDFSConnectionFailures, "Number of HDFS EIO errors that marked the current shared connection as failed.", ValueType::Number) \
     M(HDFSConnectionStaleFailures, "Number of HDFS EIO errors from stale connections that did not mark the current shared connection as failed.", ValueType::Number) \
     M(HDFSOpenFile, "Number of HDFS OpenFile calls.", ValueType::Number) \
     M(HDFSOpenFileErrors, "Number of failed HDFS OpenFile calls.", ValueType::Number) \

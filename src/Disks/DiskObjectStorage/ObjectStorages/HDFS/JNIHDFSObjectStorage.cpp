@@ -106,7 +106,9 @@ void JNIHDFSObjectStorage::createDriver() const
     LOG_TRACE(getLogger("JNIHDFSObjectStorage"), "Initializing HDFS connection: url={}, data_directory={}",
         url, data_directory);
 
-    auto connection = HDFSConnectionFactory::instance().createConnection();
+    /// Use url_without_path (scheme+authority) as the namenode key so each
+    /// distinct HDFS cluster gets its own cached connection.
+    auto connection = HDFSConnectionFactory::instance().getConnection(url_without_path);
 
     driver_ = connection.driver;
     hdfs_fs = std::move(connection.fs);
@@ -212,11 +214,10 @@ std::unique_ptr<ReadBufferFromFileBase> JNIHDFSObjectStorage::readObject( /// NO
 {
     initializeHDFSFS();
     auto path = extractObjectKeyFromURL(object);
-    LOG_INFO(log, " HDFSObjectStorage::readObject PATH is  {}", path);
-    LOG_INFO(log, " HDFSObjectStorage::readObject url_without_path is  {}", url_without_path);
-    LOG_INFO(log, " HDFSObjectStorage::readObject data_directory is  {}", data_directory);
+    LOG_TRACE(log, " HDFSObjectStorage::readObject PATH is  {}", path);
+    LOG_TRACE(log, " HDFSObjectStorage::readObject url_without_path is  {}", url_without_path);
     return std::make_unique<JNIReadBufferFromHDFS>(
-        std::filesystem::path(url_without_path) / "",
+        std::filesystem::path(url_without_path),
         path,
         config,
         patchSettings(read_settings),
@@ -326,7 +327,7 @@ std::optional<ObjectMetadata> JNIHDFSObjectStorage::tryGetObjectMetadata(const s
 void JNIHDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
     initializeHDFSFS();
-    LOG_TEST(log, "Trying to list files for {}", path);
+    LOG_TRACE(log, "Trying to list files for {}", path);
 
     HDFSFileInfo ls(driver_);
     ProfileEvents::increment(ProfileEvents::HDFSListDirectory);

@@ -4,18 +4,13 @@
 
 #pragma once
 
-#include "config.h"
 #include "Disks/DiskObjectStorage/ObjectStorages/HDFS/JNIHDFSObjectStorage.h"
 
-#include <IO/ReadBuffer.h>
-#include <IO/BufferWithOwnMemory.h>
 #include <string>
 #include <memory>
 #include <base/types.h>
-#include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFileBase.h>
 
-#include "arrow/io/hdfs_internal.h"
 #include "arrow/io/hdfs.h"
 
 namespace DB
