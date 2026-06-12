@@ -79,6 +79,7 @@ Metadata format version.
     DECLARE(String, object_storage_endpoint, "", "Object storage endpoint", 0) \
     DECLARE(String, storage_catalog_url, "", "Catalog url", 0) \
     DECLARE(String, disk, "", "Disk name to use for underlying storage", 0) \
+    DECLARE(String, filesystem_cache_name, "", "Table level filesystem cache name to use for stateless table engines or data lakes", 0) \
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_delta_kernel_rs, true) \

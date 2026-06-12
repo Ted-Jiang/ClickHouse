@@ -66,6 +66,8 @@ namespace DataLakeStorageSetting
     extern DataLakeStorageSettingsString storage_warehouse;
     extern DataLakeStorageSettingsString storage_catalog_credential;
 
+    extern DataLakeStorageSettingsString filesystem_cache_name;
+
     extern DataLakeStorageSettingsString storage_auth_scope;
     extern DataLakeStorageSettingsString storage_auth_header;
     extern DataLakeStorageSettingsString storage_oauth_server_uri;
@@ -84,6 +86,11 @@ public:
     bool isDataLakeConfiguration() const override { return true; }
 
     const DataLakeStorageSettings & getDataLakeSettings() const override { return *settings; }
+
+    String getFilesystemCacheName() const override
+    {
+        return (*settings)[DataLakeStorageSetting::filesystem_cache_name].value;
+    }
 
     std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
 

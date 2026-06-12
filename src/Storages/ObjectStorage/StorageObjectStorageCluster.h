@@ -39,6 +39,8 @@ public:
     void setArgs(const ASTs & args_)  { arg = args_; }
     ASTs getArgs() const { return arg; }
 
+    StorageObjectStorageConfigurationPtr getConfiguration() const { return configuration; }
+
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
 private:

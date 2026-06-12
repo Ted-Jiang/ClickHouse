@@ -90,6 +90,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
+    extern const SettingsString filesystem_cache_name;
 }
 
 
@@ -4825,6 +4826,21 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                         auto table_function_node = std::make_shared<TableFunctionNode>(engine_name.replace(0, 1, "i"));
                         table_function_node->setAlias(table_node->getAlias());
                         ASTs args = storageCluster->getArgs();
+                        String fileSysCache = storageCluster->getConfiguration()->getFilesystemCacheName();
+
+                        // If the table was created with SETTINGS filesystem_cache_name = '...', propagate it
+                        // to worker nodes via the SQL query. The configuration object is consistently
+                        // populated from the SETTINGS clause regardless of whether we are in a stored
+                        // table or table function context.
+                        if (scope.context->getSettingsRef()[Setting::filesystem_cache_name].value.empty() && !fileSysCache.empty())
+                        {
+                            scope.context->getSettingsRef().changes().setSetting("filesystem_cache_name", fileSysCache);
+                            LOG_TRACE(
+                                getLogger("resolveQueryJoinTreeNode"),
+                                "Injecting filesystem_cache_name='{}' into SQL sent to worker nodes",
+                                fileSysCache);
+                        }
+
                         for (const auto & arg : args)
                         {
                             QueryTreeNodePtr query_tree_arg = buildQueryTree(arg, scope.context);

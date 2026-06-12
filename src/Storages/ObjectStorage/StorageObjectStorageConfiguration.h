@@ -281,6 +281,11 @@ public:
 
     virtual void drop(ContextPtr) {}
 
+    virtual String getFilesystemCacheName() const
+    {
+        return "";
+    }
+
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
