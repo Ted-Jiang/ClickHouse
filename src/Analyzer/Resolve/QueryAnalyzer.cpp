@@ -4828,17 +4828,22 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                         ASTs args = storageCluster->getArgs();
                         String fileSysCache = storageCluster->getConfiguration()->getFilesystemCacheName();
 
-                        // If the table was created with SETTINGS filesystem_cache_name = '...', propagate it
-                        // to worker nodes via the SQL query. The configuration object is consistently
-                        // populated from the SETTINGS clause regardless of whether we are in a stored
-                        // table or table function context.
+                        // If the table was created with SETTINGS filesystem_cache_name = '...', inject it
+                        // into the QueryNode's mutable context. This is equivalent to appending
+                        // "SETTINGS filesystem_cache_name = '...'" to the query: the interpreter's context
+                        // is the same object held by the QueryNode, so setSetting here takes effect before
+                        // IStorageCluster::read is called and the setting is forwarded to worker nodes via
+                        // the distributed settings block.
                         if (scope.context->getSettingsRef()[Setting::filesystem_cache_name].value.empty() && !fileSysCache.empty())
                         {
-                            scope.context->getSettingsRef().changes().setSetting("filesystem_cache_name", fileSysCache);
-                            LOG_TRACE(
-                                getLogger("resolveQueryJoinTreeNode"),
-                                "Injecting filesystem_cache_name='{}' into SQL sent to worker nodes",
-                                fileSysCache);
+                            if (auto * query_node = scope.scope_node->as<QueryNode>())
+                            {
+                                query_node->getMutableContext()->setSetting("filesystem_cache_name", fileSysCache);
+                                LOG_TRACE(
+                                    getLogger("resolveQueryJoinTreeNode"),
+                                    "[CACHE] Injecting filesystem_cache_name='{}' into query context for worker nodes",
+                                    fileSysCache);
+                            }
                         }
 
                         for (const auto & arg : args)
